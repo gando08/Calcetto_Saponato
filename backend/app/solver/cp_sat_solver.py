@@ -1,5 +1,6 @@
-from typing import Callable, Dict, List, Optional
 import threading
+from collections import defaultdict
+from typing import Callable, Dict, List, Optional
 
 from ortools.sat.python import cp_model
 
@@ -64,14 +65,23 @@ class TournamentScheduler:
         teams_unavail = {team["id"]: set(team.get("unavailable_slot_ids", [])) for team in teams}
         team_prefs = {team["id"]: team for team in teams}
 
+        # ── Variable creation ─────────────────────────────────────────────────
+        # A match can only be assigned to a slot from the SAME tournament.
+        # Slots without a "tournament_id" key are treated as compatible with all
+        # matches (backward-compat for single-tournament scheduling).
         assigned: Dict[tuple[str, str], cp_model.IntVar] = {}
         for match in matches:
+            match_tid = match.get("tournament_id")
             for slot in slots:
+                slot_tid = slot.get("tournament_id")
+                if match_tid and slot_tid and match_tid != slot_tid:
+                    continue  # cross-tournament assignment forbidden
                 if not match.get("is_manually_locked"):
                     if check_hard_constraints(match, slot, teams_unavail):
                         key = (match["id"], slot["id"])
                         assigned[key] = model.new_bool_var(f"a_{match['id']}_{slot['id']}")
 
+        # ── Each match gets exactly one slot ──────────────────────────────────
         for match in matches:
             if match.get("is_manually_locked") and match.get("slot_id"):
                 continue
@@ -83,6 +93,7 @@ class TournamentScheduler:
             if valid_slots:
                 model.add_exactly_one(valid_slots)
 
+        # ── Each slot used by at most one match (within same tournament) ──────
         for slot in slots:
             vars_in_slot = [
                 assigned[(match["id"], slot["id"])]
@@ -92,6 +103,29 @@ class TournamentScheduler:
             if vars_in_slot:
                 model.add_at_most_one(vars_in_slot)
 
+        # ── Cross-tournament conflict: same real-world time → at most one match
+        # Group slots by (date, start_time); groups with >1 slot span tournaments.
+        time_groups: dict[tuple[str, str], list[str]] = defaultdict(list)
+        for slot in slots:
+            key = (slot.get("date", ""), slot["start_time"])
+            time_groups[key].append(slot["id"])
+
+        slot_id_set_cache: dict[tuple[str, str], set[str]] = {
+            k: set(v) for k, v in time_groups.items()
+        }
+        for time_key, slot_ids in time_groups.items():
+            if len(slot_ids) < 2:
+                continue  # only one tournament has this time slot – already covered above
+            slot_set = slot_id_set_cache[time_key]
+            cross_vars = [
+                assigned[(mid, sid)]
+                for (mid, sid) in assigned
+                if sid in slot_set
+            ]
+            if len(cross_vars) > 1:
+                model.add_at_most_one(cross_vars)
+
+        # ── Soft penalty objective ─────────────────────────────────────────────
         penalty_terms = []
         for match in matches:
             for i, slot in enumerate(slots):
@@ -105,6 +139,7 @@ class TournamentScheduler:
         if penalty_terms:
             model.minimize(sum(penalty_terms))
 
+        # ── Solve ─────────────────────────────────────────────────────────────
         solver = cp_model.CpSolver()
         solver.parameters.max_time_in_seconds = self.max_time_seconds
         solver.parameters.log_search_progress = False

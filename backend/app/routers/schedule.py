@@ -1,7 +1,7 @@
 import asyncio
-from typing import Dict, List
+from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Body, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -35,14 +35,24 @@ async def solver_ws(websocket: WebSocket, tournament_id: str) -> None:
         _ws_clients[tournament_id].remove(websocket)
 
 
+class GenerateBody(BaseModel):
+    companion_tournament_ids: Optional[List[str]] = None
+
+
 @router.post("/{tid}/schedule/generate")
-async def generate_schedule(tid: str, db: Session = Depends(get_db)) -> dict:
+async def generate_schedule(
+    tid: str,
+    body: GenerateBody = Body(default_factory=GenerateBody),
+    db: Session = Depends(get_db),
+) -> dict:
     loop = asyncio.get_event_loop()
+    all_tids = [tid] + (body.companion_tournament_ids or [])
 
     def on_progress(data: dict) -> None:
-        asyncio.run_coroutine_threadsafe(broadcast(tid, data), loop)
+        for broadcast_tid in all_tids:
+            asyncio.run_coroutine_threadsafe(broadcast(broadcast_tid, data), loop)
 
-    start_scheduling(tid, db, on_progress)
+    start_scheduling(tid, db, on_progress, companion_tids=body.companion_tournament_ids)
     return {"status": "started"}
 
 

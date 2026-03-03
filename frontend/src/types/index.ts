@@ -14,6 +14,8 @@ export interface Tournament {
   points_loss: number;
   tiebreaker_order: string[];
   penalty_weights: Record<string, number>;
+  gender?: "M" | "F" | null;
+  max_teams?: number | null;
 }
 
 export interface TimeWindow {

@@ -82,6 +82,7 @@ export function Schedule() {
   const [solverStatus, setSolverStatus] = useState<string>("idle");
   const [solverObjective, setSolverObjective] = useState<number | null>(null);
   const [localSchedule, setLocalSchedule] = useState<Match[] | null>(null);
+  const [companionTids, setCompanionTids] = useState<string[]>([]);
 
   const tournamentsQuery = useQuery({
     queryKey: ["tournaments"],
@@ -150,8 +151,16 @@ export function Schedule() {
     return () => ws.close();
   }, [tid]);
 
+  // Reset companion selection when active tournament changes
+  useEffect(() => {
+    setCompanionTids([]);
+  }, [tid]);
+
   const generateMutation = useMutation({
-    mutationFn: () => tournamentApi.generateSchedule(tid),
+    mutationFn: () =>
+      tournamentApi.generateSchedule(tid, {
+        companion_tournament_ids: companionTids.length > 0 ? companionTids : undefined
+      }),
     onSuccess: () => {
       setSolverStatus("running");
       queryClient.invalidateQueries({ queryKey: ["schedule-status", tid] });
@@ -285,6 +294,30 @@ export function Schedule() {
             ))}
           </select>
         </label>
+
+        {(tournamentsQuery.data || []).filter((t: { id: string }) => t.id !== tid).length > 0 && (
+          <div className="flex flex-col gap-1">
+            <span className="text-sm">Pianifica insieme a:</span>
+            <div className="flex flex-wrap gap-3">
+              {(tournamentsQuery.data || [])
+                .filter((t: { id: string }) => t.id !== tid)
+                .map((t: { id: string; name: string }) => (
+                  <label key={t.id} className="flex items-center gap-1.5 cursor-pointer text-sm">
+                    <input
+                      type="checkbox"
+                      checked={companionTids.includes(t.id)}
+                      onChange={(e) =>
+                        setCompanionTids((prev) =>
+                          e.target.checked ? [...prev, t.id] : prev.filter((id) => id !== t.id)
+                        )
+                      }
+                    />
+                    {t.name}
+                  </label>
+                ))}
+            </div>
+          </div>
+        )}
 
         <button className="px-3 py-2 border rounded" type="button" onClick={() => void generateMutation.mutateAsync()} disabled={!tid}>
           Genera calendario

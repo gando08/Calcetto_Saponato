@@ -15,7 +15,8 @@ export const tournamentApi = {
   generateGroups: (id: string) => api.post(`/api/tournaments/${id}/groups/generate`).then((r) => r.data),
   getGroups: (id: string) => api.get(`/api/tournaments/${id}/groups`).then((r) => r.data),
   getGroupsCompatibility: (id: string) => api.get(`/api/tournaments/${id}/groups/compatibility`).then((r) => r.data),
-  generateSchedule: (id: string) => api.post(`/api/tournaments/${id}/schedule/generate`).then((r) => r.data),
+  generateSchedule: (id: string, body: { companion_tournament_ids?: string[] } = {}) =>
+    api.post(`/api/tournaments/${id}/schedule/generate`, body).then((r) => r.data),
   getSchedule: (id: string) => api.get(`/api/tournaments/${id}/schedule`).then((r) => r.data),
   getScheduleStatus: (id: string) => api.get(`/api/tournaments/${id}/schedule/status`).then((r) => r.data),
   applySchedule: (id: string) => api.post(`/api/tournaments/${id}/schedule/apply`).then((r) => r.data),

@@ -1,4 +1,4 @@
-from typing import Callable, Dict
+from typing import Callable, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
@@ -19,19 +19,30 @@ def get_solver_status(tournament_id: str) -> Dict:
     return {"status": solver.status, "result": solver.result}
 
 
-def start_scheduling(tournament_id: str, db: Session, on_progress: Callable[[Dict], None]) -> None:
-    tournament = db.query(Tournament).filter(Tournament.id == tournament_id).first()
-    if not tournament:
-        raise ValueError("Tournament not found")
-
-    slots = db.query(Slot).join(Day, Slot.day_id == Day.id).filter(Day.tournament_id == tournament_id).all()
-    matches = db.query(Match).join(Group, Match.group_id == Group.id).filter(Group.tournament_id == tournament_id).all()
+def _collect_tournament_data(
+    tournament_id: str, db: Session
+) -> tuple[list[dict], list[dict], list[dict]]:
+    """Return (slot_dicts, match_dicts, team_dicts) for a single tournament."""
+    slots = (
+        db.query(Slot)
+        .join(Day, Slot.day_id == Day.id)
+        .filter(Day.tournament_id == tournament_id)
+        .all()
+    )
+    matches = (
+        db.query(Match)
+        .join(Group, Match.group_id == Group.id)
+        .filter(Group.tournament_id == tournament_id)
+        .all()
+    )
     teams = db.query(Team).filter(Team.tournament_id == tournament_id).all()
 
     slot_dicts = [
         {
             "id": slot.id,
+            "tournament_id": tournament_id,
             "day_id": slot.day_id,
+            "date": slot.day.date if slot.day else "",
             "start_time": slot.start_time,
             "end_time": slot.end_time,
             "is_finals_day": slot.day.is_finals_day if slot.day else False,
@@ -41,6 +52,7 @@ def start_scheduling(tournament_id: str, db: Session, on_progress: Callable[[Dic
     match_dicts = [
         {
             "id": match.id,
+            "tournament_id": tournament_id,
             "team_home_id": match.team_home_id,
             "team_away_id": match.team_away_id,
             "phase": str(match.phase),
@@ -59,11 +71,38 @@ def start_scheduling(tournament_id: str, db: Session, on_progress: Callable[[Dic
         }
         for team in teams
     ]
+    return slot_dicts, match_dicts, team_dicts
+
+
+def start_scheduling(
+    tournament_id: str,
+    db: Session,
+    on_progress: Callable[[Dict], None],
+    companion_tids: Optional[List[str]] = None,
+) -> None:
+    tournament = db.query(Tournament).filter(Tournament.id == tournament_id).first()
+    if not tournament:
+        raise ValueError("Tournament not found")
+
+    all_slots: list[dict] = []
+    all_matches: list[dict] = []
+    all_teams: list[dict] = []
+
+    for tid in [tournament_id] + (companion_tids or []):
+        s, m, t = _collect_tournament_data(tid, db)
+        all_slots.extend(s)
+        all_matches.extend(m)
+        all_teams.extend(t)
 
     config = {"penalty_weights": tournament.penalty_weights or {}}
     solver = TournamentScheduler(config=config, on_progress=on_progress)
+
+    # Register solver under all tournament IDs so apply() works from any of them
     _active_solvers[tournament_id] = solver
-    solver.schedule_async(match_dicts, slot_dicts, team_dicts)
+    for tid in (companion_tids or []):
+        _active_solvers[tid] = solver
+
+    solver.schedule_async(all_matches, all_slots, all_teams)
 
 
 def apply_solution(tournament_id: str, db: Session) -> bool:

@@ -24,6 +24,8 @@ class TournamentCreate(BaseModel):
         "draw",
     ]
     penalty_weights: Dict[str, int] = {}
+    gender: Optional[str] = None       # "M", "F", or None
+    max_teams: Optional[int] = None    # None = no limit
 
 
 class TournamentUpdate(TournamentCreate):

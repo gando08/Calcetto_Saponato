@@ -5,6 +5,7 @@ from sqlalchemy import JSON, Boolean, Column, Enum as SAEnum, Integer, String
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+from app.models.team import Gender
 
 
 class TournamentStatus(str, enum.Enum):
@@ -53,6 +54,8 @@ class Tournament(Base):
             "finals_day_preference": 20,
         },
     )
+    gender = Column(SAEnum(Gender), nullable=True)   # M, F, or None (mixed/legacy)
+    max_teams = Column(Integer, nullable=True)       # None = unlimited
 
     days = relationship("Day", back_populates="tournament", cascade="all, delete-orphan")
     teams = relationship("Team", back_populates="tournament", cascade="all, delete-orphan")

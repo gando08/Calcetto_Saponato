@@ -25,6 +25,8 @@ export function TournamentSetup() {
   const [success, setSuccess] = useState<string | null>(null);
 
   const [name, setName] = useState("Torneo Calcetto Saponato");
+  const [gender, setGender] = useState<"" | "M" | "F">("");
+  const [maxTeams, setMaxTeams] = useState<number | "">(16);
   const [totalDays, setTotalDays] = useState(4);
   const [matchDuration, setMatchDuration] = useState(30);
   const [bufferMinutes, setBufferMinutes] = useState(0);
@@ -128,6 +130,8 @@ export function TournamentSetup() {
 
       const tournament = await tournamentApi.create({
         name,
+        gender: gender || null,
+        max_teams: gender && maxTeams !== "" ? Number(maxTeams) : null,
         total_days: totalDays,
         match_duration_minutes: matchDuration,
         buffer_minutes: bufferMinutes,
@@ -186,10 +190,43 @@ export function TournamentSetup() {
 
       {step === 0 ? (
         <section className="grid md:grid-cols-2 gap-4">
-          <label className="flex flex-col gap-1">
+          <label className="flex flex-col gap-1 md:col-span-2">
             <span className="text-sm font-medium">Nome torneo</span>
             <input className="border rounded px-3 py-2" value={name} onChange={(e) => setName(e.target.value)} />
           </label>
+
+          {/* ── Genere torneo ── */}
+          <label className="flex flex-col gap-1">
+            <span className="text-sm font-medium">Genere torneo</span>
+            <select
+              className="border rounded px-3 py-2"
+              value={gender}
+              onChange={(e) => {
+                const g = e.target.value as "" | "M" | "F";
+                setGender(g);
+                if (g === "M") setMaxTeams(16);
+                else if (g === "F") setMaxTeams(6);
+                else setMaxTeams("");
+              }}
+            >
+              <option value="">Misto / non specificato</option>
+              <option value="M">Maschile (M)</option>
+              <option value="F">Femminile (F)</option>
+            </select>
+          </label>
+          {gender ? (
+            <label className="flex flex-col gap-1">
+              <span className="text-sm font-medium">Max squadre</span>
+              <input
+                type="number"
+                min={2}
+                className="border rounded px-3 py-2"
+                value={maxTeams}
+                onChange={(e) => setMaxTeams(e.target.value === "" ? "" : Number(e.target.value))}
+              />
+            </label>
+          ) : <div />}
+
           <label className="flex flex-col gap-1">
             <span className="text-sm font-medium">Giorni previsti</span>
             <input
@@ -379,6 +416,15 @@ export function TournamentSetup() {
           <div>
             <strong>Torneo:</strong> {name}
           </div>
+          {gender ? (
+            <div>
+              <strong>Genere:</strong>{" "}
+              <span className={`px-2 py-0.5 rounded text-xs font-semibold ${gender === "M" ? "bg-blue-100 text-blue-800" : "bg-pink-100 text-pink-800"}`}>
+                {gender === "M" ? "Maschile" : "Femminile"}
+              </span>
+              {maxTeams ? ` — max ${maxTeams} squadre` : ""}
+            </div>
+          ) : null}
           <div>
             <strong>Durata partita:</strong> {matchDuration} min (+{bufferMinutes} min buffer)
           </div>

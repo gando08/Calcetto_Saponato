@@ -201,7 +201,7 @@ export function Teams() {
 
   const openCreate = () => {
     setEditingTeam(null);
-    setForm(EMPTY_FORM);
+    setForm({ ...EMPTY_FORM, gender: (current?.gender as "M" | "F") ?? "M" });
     setErrorMessage(null);
     setPanelOpen(true);
   };
@@ -438,17 +438,30 @@ export function Teams() {
               />
             </label>
 
-            <label className="flex flex-col gap-1">
+            <div className="flex flex-col gap-1">
               <span className="text-sm font-medium">Genere</span>
-              <select
-                className="border rounded px-3 py-2"
-                value={form.gender}
-                onChange={(e) => setForm((f) => ({ ...f, gender: e.target.value as "M" | "F" }))}
-              >
-                <option value="M">Maschile (M)</option>
-                <option value="F">Femminile (F)</option>
-              </select>
-            </label>
+              {current?.gender ? (
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`px-2 py-1 text-sm rounded font-medium ${
+                      current.gender === "M" ? "bg-blue-100 text-blue-700" : "bg-pink-100 text-pink-700"
+                    }`}
+                  >
+                    {current.gender === "M" ? "Maschile (M)" : "Femminile (F)"}
+                  </span>
+                  <span className="text-xs text-slate-500">Impostato dal torneo</span>
+                </div>
+              ) : (
+                <select
+                  className="border rounded px-3 py-2"
+                  value={form.gender}
+                  onChange={(e) => setForm((f) => ({ ...f, gender: e.target.value as "M" | "F" }))}
+                >
+                  <option value="M">Maschile (M)</option>
+                  <option value="F">Femminile (F)</option>
+                </select>
+              )}
+            </div>
 
             <label className="flex flex-col gap-1">
               <span className="text-sm font-medium">Giorni preferiti</span>
