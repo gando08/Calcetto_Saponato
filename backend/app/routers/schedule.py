@@ -69,8 +69,18 @@ def get_schedule(tid: str, db: Session = Depends(get_db)) -> List[dict]:
                 "id": match.id,
                 "phase": str(match.phase),
                 "status": str(match.status),
+                "team_home_id": match.team_home_id,
+                "team_away_id": match.team_away_id,
                 "team_home": match.team_home.name if match.team_home else match.placeholder_home,
                 "team_away": match.team_away.name if match.team_away else match.placeholder_away,
+                "result": {
+                    "goals_home": match.result.goals_home,
+                    "goals_away": match.result.goals_away,
+                    "yellow_home": match.result.yellow_home,
+                    "yellow_away": match.result.yellow_away,
+                }
+                if match.result
+                else None,
                 "slot": {
                     "id": match.slot.id,
                     "start_time": match.slot.start_time,

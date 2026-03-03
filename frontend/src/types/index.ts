@@ -46,8 +46,16 @@ export interface Match {
   id: string;
   phase: string;
   status: string;
+  team_home_id?: string | null;
+  team_away_id?: string | null;
   team_home: string;
   team_away: string;
+  result?: {
+    goals_home: number;
+    goals_away: number;
+    yellow_home: number;
+    yellow_away: number;
+  } | null;
   slot: { id: string; start_time: string; end_time: string; day_label: string } | null;
   group_name: string;
   gender: string;
@@ -80,4 +88,16 @@ export interface Scorer {
   team: string;
   team_gender: string;
   goals: number;
+}
+
+export interface BracketMatch {
+  phase: string;
+  round: number;
+  gender: string;
+  team_home_id?: string | null;
+  team_away_id?: string | null;
+  placeholder_home: string;
+  placeholder_away: string;
+  bracket_position: number;
+  prerequisite_positions?: number[];
 }

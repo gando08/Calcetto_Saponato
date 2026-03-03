@@ -4,12 +4,50 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.goal_event import GoalEvent
 from app.models.group import Group, GroupPhase
-from app.models.match import MatchStatus
+from app.models.match import Match, MatchStatus
 from app.models.team import Team
 from app.models.tournament import Tournament
 from app.services.standings_calculator import calculate_standings
 
 router = APIRouter(prefix="/api/tournaments", tags=["standings"])
+
+
+@router.get("/{tid}/standings/scorers")
+def get_scorers(tid: str, gender: str | None = None, db: Session = Depends(get_db)) -> list:
+    goals = (
+        db.query(GoalEvent)
+        .join(Match, GoalEvent.match_id == Match.id)
+        .join(Group, Match.group_id == Group.id)
+        .filter(
+            Group.tournament_id == tid,
+            GoalEvent.is_own_goal.is_(False),
+        )
+        .all()
+    )
+    team_ids = {goal.attributed_to_team_id for goal in goals}
+    teams = db.query(Team).filter(Team.id.in_(team_ids)).all() if team_ids else []
+    teams_by_id = {team.id: team for team in teams}
+    scorers = {}
+    for goal in goals:
+        key = goal.player_name_free or (goal.player.name if goal.player else "Sconosciuto")
+        team_id = goal.attributed_to_team_id
+        pair = (key, team_id)
+        scorers[pair] = scorers.get(pair, 0) + 1
+
+    result = []
+    for (name, team_id), goals_count in sorted(scorers.items(), key=lambda item: -item[1]):
+        team = teams_by_id.get(team_id)
+        if gender and team and team.gender != gender.upper():
+            continue
+        result.append(
+            {
+                "player": name,
+                "team": team.name if team else "?",
+                "team_gender": team.gender if team else "?",
+                "goals": goals_count,
+            }
+        )
+    return result
 
 
 @router.get("/{tid}/standings/{gender}")
@@ -60,31 +98,4 @@ def get_standings(tid: str, gender: str, db: Session = Depends(get_db)) -> list:
 
         result.append({"group": group.name, "standings": standings})
 
-    return result
-
-
-@router.get("/{tid}/standings/scorers")
-def get_scorers(tid: str, gender: str | None = None, db: Session = Depends(get_db)) -> list:
-    del tid
-    goals = db.query(GoalEvent).filter(GoalEvent.is_own_goal.is_(False)).all()
-    scorers = {}
-    for goal in goals:
-        key = goal.player_name_free or (goal.player.name if goal.player else "Sconosciuto")
-        team_id = goal.attributed_to_team_id
-        pair = (key, team_id)
-        scorers[pair] = scorers.get(pair, 0) + 1
-
-    result = []
-    for (name, team_id), goals_count in sorted(scorers.items(), key=lambda item: -item[1]):
-        team = db.query(Team).filter(Team.id == team_id).first()
-        if gender and team and team.gender != gender.upper():
-            continue
-        result.append(
-            {
-                "player": name,
-                "team": team.name if team else "?",
-                "team_gender": team.gender if team else "?",
-                "goals": goals_count,
-            }
-        )
     return result
