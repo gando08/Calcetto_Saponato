@@ -91,15 +91,19 @@ export interface Scorer {
 }
 
 export interface BracketMatch {
+  id?: string;
   phase: string;
   round: number;
   gender: string;
+  status?: string;
   team_home_id?: string | null;
   team_away_id?: string | null;
   placeholder_home: string;
   placeholder_away: string;
   bracket_position: number;
   prerequisite_positions?: number[];
+  prerequisite_match_home_id?: string | null;
+  prerequisite_match_away_id?: string | null;
 }
 
 export interface GroupTeamSummary {

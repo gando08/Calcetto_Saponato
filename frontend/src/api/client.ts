@@ -22,8 +22,11 @@ export const tournamentApi = {
   getStandings: (id: string, gender: string) => api.get(`/api/tournaments/${id}/standings/${gender}`).then((r) => r.data),
   getScorers: (id: string, gender?: string) =>
     api.get(`/api/tournaments/${id}/standings/scorers`, { params: { gender } }).then((r) => r.data),
+  getBracket: (id: string, gender: string) => api.get(`/api/tournaments/${id}/bracket/${gender}`).then((r) => r.data),
   generateBracket: (id: string, gender: string) =>
     api.post(`/api/tournaments/${id}/bracket/${gender}`).then((r) => r.data),
+  advanceBracket: (id: string, gender: string, matchId: string, winnerTeamId: string) =>
+    api.post(`/api/tournaments/${id}/bracket/${gender}/advance`, { match_id: matchId, winner_team_id: winnerTeamId }).then((r) => r.data),
   exportCsv: (id: string) => api.get(`/api/tournaments/${id}/export/csv`, { responseType: "blob" })
 };
 
