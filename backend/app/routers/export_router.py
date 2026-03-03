@@ -286,14 +286,15 @@ def _build_full_html(tournament: Tournament, matches: list[Match], db: Session) 
 
 @router.get("/{tid}/export/pdf")
 def export_pdf(tid: str, db: Session = Depends(get_db)) -> Response:
+    # Validate tournament existence before attempting WeasyPrint import
+    tournament = db.query(Tournament).filter(Tournament.id == tid).first()
+    if not tournament:
+        raise HTTPException(404, "Torneo non trovato")
+
     try:
         from weasyprint import HTML  # type: ignore[import-untyped]
     except ImportError as exc:
         raise HTTPException(500, "WeasyPrint non installato sul server") from exc
-
-    tournament = db.query(Tournament).filter(Tournament.id == tid).first()
-    if not tournament:
-        raise HTTPException(404, "Torneo non trovato")
 
     matches = (
         db.query(Match)
