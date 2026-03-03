@@ -4,6 +4,26 @@ Applicazione web per organizzare tornei di calcetto saponato con scheduling otti
 
 ## Avvio rapido
 
+### Come applicazione (Windows, doppio click)
+
+Nella cartella progetto:
+
+- Doppio click su `AVVIA_Torneo_App.bat` per avviare backend+frontend e aprire il browser.
+- Doppio click su `CHIUDI_Torneo_App.bat` per arrestare l'applicazione.
+
+Richiede Docker Desktop in esecuzione.
+
+### Come applicazione locale (Windows, senza Docker)
+
+Nella cartella progetto:
+
+- Doppio click su `AVVIA_Torneo_Locale.bat` per avviare backend+frontend e aprire il browser.
+- Doppio click su `CHIUDI_Torneo_Locale.bat` per arrestare i processi locali.
+
+Requisiti:
+- Python 3.13
+- Node.js + npm
+
 ### Con Docker
 
 ```bash
