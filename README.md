@@ -47,6 +47,16 @@ cd backend
 python -m pytest tests -v
 ```
 
+## Workflow operativo (Setup -> Squadre -> Calendario)
+
+1. Apri `Configurazione` e crea il torneo con wizard 4 step.
+2. Vai su `Squadre`, seleziona il torneo attivo, crea/importa le squadre e imposta preferenze.
+3. Vai su `Calendario`:
+   - usa `Genera calendario` per avviare il solver
+   - usa `Applica soluzione` per fissare gli slot
+   - sposta manualmente le partite con drag&drop
+   - usa `Lock/Unlock` per bloccare partite non rischedulabili
+
 ## Struttura
 
 - `/backend` - FastAPI + OR-Tools + SQLite
