@@ -47,6 +47,10 @@ export function Export() {
     mutationFn: () => tournamentApi.exportCsv(tid)
   });
 
+  const exportPdfMutation = useMutation({
+    mutationFn: () => tournamentApi.exportPdf(tid)
+  });
+
   const onExportCsv = async () => {
     if (!tid) {
       setErrorMessage("Seleziona prima un torneo.");
@@ -59,18 +63,38 @@ export function Export() {
       const fallback = `calendario_${tid}.csv`;
       const filename = extractFilename(response.headers?.["content-disposition"] as string | undefined, fallback);
       downloadBlobFile(response.data as Blob, filename);
-      setSuccessMessage(`Export completato: ${filename}`);
+      setSuccessMessage(`Export CSV completato: ${filename}`);
     } catch (e: unknown) {
       setErrorMessage(e instanceof Error ? e.message : "Errore durante l'export CSV.");
     }
   };
+
+  const onExportPdf = async () => {
+    if (!tid) {
+      setErrorMessage("Seleziona prima un torneo.");
+      return;
+    }
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    try {
+      const response = await exportPdfMutation.mutateAsync();
+      const fallback = `torneo_${tid}.pdf`;
+      const filename = extractFilename(response.headers?.["content-disposition"] as string | undefined, fallback);
+      downloadBlobFile(response.data as Blob, filename);
+      setSuccessMessage(`Export PDF completato: ${filename}`);
+    } catch (e: unknown) {
+      setErrorMessage(e instanceof Error ? e.message : "Errore durante l'export PDF.");
+    }
+  };
+
+  const isPending = exportCsvMutation.isPending || exportPdfMutation.isPending;
 
   return (
     <div className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">Export</h1>
-          <p className="text-slate-600">Scarica il calendario partite in CSV e usa la stampa browser per report veloci.</p>
+          <p className="text-slate-600">Scarica il calendario in CSV o PDF completo (calendario + classifiche + marcatori).</p>
         </div>
       </header>
 
@@ -97,26 +121,54 @@ export function Export() {
         </label>
 
         <button
-          className="px-3 py-2 border rounded"
+          className="px-4 py-2 border rounded bg-slate-50 hover:bg-slate-100"
           type="button"
           onClick={() => void onExportCsv()}
-          disabled={!tid || exportCsvMutation.isPending}
+          disabled={!tid || isPending}
         >
-          {exportCsvMutation.isPending ? "Esportazione..." : "Scarica CSV"}
+          {exportCsvMutation.isPending ? "Esportazione..." : "📥 Scarica CSV"}
         </button>
 
-        <button className="px-3 py-2 border rounded" type="button" onClick={() => window.print()}>
-          Stampa pagina
+        <button
+          className="px-4 py-2 border rounded bg-slate-50 hover:bg-slate-100"
+          type="button"
+          onClick={() => void onExportPdf()}
+          disabled={!tid || isPending}
+        >
+          {exportPdfMutation.isPending ? "Generazione PDF..." : "📄 Scarica PDF"}
+        </button>
+
+        <button
+          className="px-4 py-2 border rounded bg-slate-50 hover:bg-slate-100"
+          type="button"
+          onClick={() => window.print()}
+          disabled={isPending}
+        >
+          🖨️ Stampa pagina
         </button>
       </section>
 
-      <section className="bg-white p-4 rounded shadow text-sm text-slate-700 space-y-2">
-        <p>
-          Endpoint attivo CSV:
-          {" "}
-          <code>{tid ? `/api/tournaments/${tid}/export/csv` : "/api/tournaments/{id}/export/csv"}</code>
-        </p>
-        <p>Export PDF per vista squadra/giorno non ancora disponibile in backend.</p>
+      <section className="bg-white p-4 rounded shadow space-y-3 text-sm text-slate-700">
+        <h2 className="font-semibold text-base">Cosa include ogni export</h2>
+        <div className="grid md:grid-cols-2 gap-4">
+          <div className="border rounded p-3">
+            <h3 className="font-medium mb-1">📥 CSV</h3>
+            <ul className="list-disc list-inside text-slate-600 space-y-0.5">
+              <li>Calendario completo (tutte le partite)</li>
+              <li>Risultati per le partite già giocate</li>
+              <li>Compatibile con Excel / Fogli Google</li>
+            </ul>
+          </div>
+          <div className="border rounded p-3">
+            <h3 className="font-medium mb-1">📄 PDF</h3>
+            <ul className="list-disc list-inside text-slate-600 space-y-0.5">
+              <li>Calendario partite (con risultati)</li>
+              <li>Classifiche gironi per genere</li>
+              <li>Classifica marcatori M e F</li>
+              <li>Formato A4, pronto per stampa</li>
+            </ul>
+          </div>
+        </div>
       </section>
     </div>
   );

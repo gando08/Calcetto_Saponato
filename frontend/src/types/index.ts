@@ -145,3 +145,12 @@ export interface CompatibilityBlock {
   teams: Array<{ id: string; name: string }>;
   matrix: Record<string, Record<string, number>>;
 }
+
+export interface ScheduleQuality {
+  total_matches: number;
+  scheduled_matches: number;
+  unscheduled_matches: number;
+  coverage_pct: number;
+  locked_matches: number;
+  slot_conflicts: number;
+}

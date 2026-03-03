@@ -37,10 +37,10 @@ async def solver_ws(websocket: WebSocket, tournament_id: str) -> None:
 
 @router.post("/{tid}/schedule/generate")
 async def generate_schedule(tid: str, db: Session = Depends(get_db)) -> dict:
+    loop = asyncio.get_event_loop()
+
     def on_progress(data: dict) -> None:
-        loop = asyncio.new_event_loop()
-        loop.run_until_complete(broadcast(tid, data))
-        loop.close()
+        asyncio.run_coroutine_threadsafe(broadcast(tid, data), loop)
 
     start_scheduling(tid, db, on_progress)
     return {"status": "started"}
@@ -49,6 +49,31 @@ async def generate_schedule(tid: str, db: Session = Depends(get_db)) -> dict:
 @router.get("/{tid}/schedule/status")
 def schedule_status(tid: str) -> dict:
     return get_solver_status(tid)
+
+
+@router.get("/{tid}/schedule/quality")
+def schedule_quality(tid: str, db: Session = Depends(get_db)) -> dict:
+    matches = (
+        db.query(Match)
+        .join(Group, Match.group_id == Group.id)
+        .filter(Group.tournament_id == tid)
+        .all()
+    )
+
+    total = len(matches)
+    scheduled = sum(1 for m in matches if m.slot_id is not None)
+    locked = sum(1 for m in matches if m.is_manually_locked)
+    slot_ids = [m.slot_id for m in matches if m.slot_id]
+    conflicts = max(0, len(slot_ids) - len(set(slot_ids)))
+
+    return {
+        "total_matches": total,
+        "scheduled_matches": scheduled,
+        "unscheduled_matches": total - scheduled,
+        "coverage_pct": round(scheduled / total * 100, 1) if total > 0 else 0.0,
+        "locked_matches": locked,
+        "slot_conflicts": conflicts,
+    }
 
 
 @router.post("/{tid}/schedule/apply")

@@ -1,6 +1,6 @@
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class TeamCreate(BaseModel):
@@ -18,8 +18,7 @@ class TeamUpdate(TeamCreate):
 
 
 class TeamResponse(TeamCreate):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     tournament_id: str
-
-    class Config:
-        from_attributes = True

@@ -6,7 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { scheduleApi, tournamentApi } from "../api/client";
 import { useTournamentStore } from "../store/tournament";
-import type { Match, Slot } from "../types";
+import type { Match, ScheduleQuality, Slot } from "../types";
 
 type MatchCardProps = {
   match: Match;
@@ -110,6 +110,12 @@ export function Schedule() {
     queryFn: () => tournamentApi.getScheduleStatus(tid),
     enabled: Boolean(tid),
     refetchInterval: 4000
+  });
+  const qualityQuery = useQuery({
+    queryKey: ["schedule-quality", tid],
+    queryFn: () => tournamentApi.getScheduleQuality(tid),
+    enabled: Boolean(tid),
+    refetchInterval: 8000
   });
 
   useEffect(() => {
@@ -303,6 +309,39 @@ export function Schedule() {
           <strong>Solver:</strong> {solverStatus} {solverObjective !== null ? `• obj ${solverObjective}` : ""}
         </div>
       </section>
+
+      {qualityQuery.data ? (
+        <section className="bg-white p-3 rounded shadow">
+          {(() => {
+            const q = qualityQuery.data as ScheduleQuality;
+            const coverageColor =
+              q.coverage_pct >= 100 ? "text-green-700" : q.coverage_pct >= 50 ? "text-yellow-700" : "text-red-700";
+            return (
+              <div className="flex flex-wrap gap-4 text-sm">
+                <span>
+                  <span className="text-slate-500">Copertura:</span>{" "}
+                  <strong className={coverageColor}>{q.coverage_pct}%</strong>
+                  {" "}({q.scheduled_matches}/{q.total_matches})
+                </span>
+                <span>
+                  <span className="text-slate-500">Non assegnate:</span>{" "}
+                  <strong className={q.unscheduled_matches > 0 ? "text-orange-700" : "text-green-700"}>
+                    {q.unscheduled_matches}
+                  </strong>
+                </span>
+                <span>
+                  <span className="text-slate-500">Bloccate:</span> <strong>{q.locked_matches}</strong>
+                </span>
+                {q.slot_conflicts > 0 && (
+                  <span className="text-red-700">
+                    ⚠ Conflitti slot: <strong>{q.slot_conflicts}</strong>
+                  </span>
+                )}
+              </div>
+            );
+          })()}
+        </section>
+      ) : null}
 
       <section className="bg-white p-4 rounded shadow space-y-3">
         <h2 className="font-semibold">Partite non assegnate</h2>

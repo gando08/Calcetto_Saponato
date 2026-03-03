@@ -27,7 +27,9 @@ export const tournamentApi = {
     api.post(`/api/tournaments/${id}/bracket/${gender}`).then((r) => r.data),
   advanceBracket: (id: string, gender: string, matchId: string, winnerTeamId: string) =>
     api.post(`/api/tournaments/${id}/bracket/${gender}/advance`, { match_id: matchId, winner_team_id: winnerTeamId }).then((r) => r.data),
-  exportCsv: (id: string) => api.get(`/api/tournaments/${id}/export/csv`, { responseType: "blob" })
+  exportCsv: (id: string) => api.get(`/api/tournaments/${id}/export/csv`, { responseType: "blob" }),
+  exportPdf: (id: string) => api.get(`/api/tournaments/${id}/export/pdf`, { responseType: "blob" }),
+  getScheduleQuality: (id: string) => api.get(`/api/tournaments/${id}/schedule/quality`).then((r) => r.data),
 };
 
 export const teamApi = {
