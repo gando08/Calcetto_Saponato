@@ -23,11 +23,16 @@ class GoalCreate(BaseModel):
     attributed_to_team_id: str
 
 
-@router.post("/{mid}/result")
-def set_result(mid: str, data: ResultCreate, db: Session = Depends(get_db)) -> dict:
+def _get_match_or_404(mid: str, db: Session) -> Match:
     match = db.query(Match).filter(Match.id == mid).first()
     if not match:
         raise HTTPException(404, "Partita non trovata")
+    return match
+
+
+@router.post("/{mid}/result")
+def set_result(mid: str, data: ResultCreate, db: Session = Depends(get_db)) -> dict:
+    match = _get_match_or_404(mid, db)
 
     result = db.query(Result).filter(Result.match_id == mid).first()
     if result:
@@ -44,8 +49,24 @@ def set_result(mid: str, data: ResultCreate, db: Session = Depends(get_db)) -> d
     return {"ok": True}
 
 
+@router.get("/{mid}/result")
+def get_result(mid: str, db: Session = Depends(get_db)) -> dict:
+    _get_match_or_404(mid, db)
+    result = db.query(Result).filter(Result.match_id == mid).first()
+    if not result:
+        raise HTTPException(404, "Risultato non trovato")
+    return {
+        "match_id": mid,
+        "goals_home": result.goals_home,
+        "goals_away": result.goals_away,
+        "yellow_home": result.yellow_home,
+        "yellow_away": result.yellow_away,
+    }
+
+
 @router.post("/{mid}/goals")
 def add_goal(mid: str, data: GoalCreate, db: Session = Depends(get_db)) -> dict:
+    _get_match_or_404(mid, db)
     goal = GoalEvent(
         match_id=mid,
         player_name_free=data.player_name,
@@ -56,6 +77,22 @@ def add_goal(mid: str, data: GoalCreate, db: Session = Depends(get_db)) -> dict:
     db.commit()
     db.refresh(goal)
     return {"id": goal.id}
+
+
+@router.get("/{mid}/goals")
+def list_goals(mid: str, db: Session = Depends(get_db)) -> list[dict]:
+    _get_match_or_404(mid, db)
+    goals = db.query(GoalEvent).filter(GoalEvent.match_id == mid).order_by(GoalEvent.id).all()
+    return [
+        {
+            "id": goal.id,
+            "match_id": goal.match_id,
+            "player_name": goal.player_name_free or (goal.player.name if goal.player else "Sconosciuto"),
+            "is_own_goal": goal.is_own_goal,
+            "attributed_to_team_id": goal.attributed_to_team_id,
+        }
+        for goal in goals
+    ]
 
 
 @router.delete("/goals/{gid}")

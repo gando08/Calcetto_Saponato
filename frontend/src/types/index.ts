@@ -90,6 +90,14 @@ export interface Scorer {
   goals: number;
 }
 
+export interface MatchGoal {
+  id: string;
+  match_id: string;
+  player_name: string;
+  is_own_goal: boolean;
+  attributed_to_team_id: string;
+}
+
 export interface BracketMatch {
   id?: string;
   phase: string;

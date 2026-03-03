@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { matchApi, teamApi, tournamentApi } from "../api/client";
 import { useTournamentStore } from "../store/tournament";
-import type { Match, Scorer, StandingRow, Team } from "../types";
+import type { Match, MatchGoal, Scorer, StandingRow, Team } from "../types";
 
 type ResultDraft = {
   goals_home: number;
@@ -66,6 +66,11 @@ export function Results() {
     queryFn: () => tournamentApi.getScorers(tid, gender),
     enabled: Boolean(tid)
   });
+  const goalsQuery = useQuery({
+    queryKey: ["match-goals", goalDraft.matchId],
+    queryFn: () => matchApi.listGoals(goalDraft.matchId),
+    enabled: Boolean(goalDraft.matchId)
+  });
 
   const setResultMutation = useMutation({
     mutationFn: ({ matchId, payload }: { matchId: string; payload: ResultDraft }) => matchApi.setResult(matchId, payload),
@@ -82,8 +87,18 @@ export function Results() {
         attributed_to_team_id: payload.attributedToTeamId,
         is_own_goal: payload.isOwnGoal
       }),
+    onSuccess: async (_, vars) => {
+      await queryClient.invalidateQueries({ queryKey: ["scorers", tid, gender] });
+      await queryClient.invalidateQueries({ queryKey: ["match-goals", vars.mid] });
+    }
+  });
+  const deleteGoalMutation = useMutation({
+    mutationFn: (goalId: string) => matchApi.deleteGoal(goalId),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["scorers", tid, gender] });
+      if (goalDraft.matchId) {
+        await queryClient.invalidateQueries({ queryKey: ["match-goals", goalDraft.matchId] });
+      }
     }
   });
 
@@ -152,6 +167,15 @@ export function Results() {
       setGoalDraft((g) => ({ ...g, playerName: "", isOwnGoal: false }));
     } catch (e: unknown) {
       setErrorMessage(e instanceof Error ? e.message : "Errore inserimento marcatore.");
+    }
+  };
+
+  const removeGoal = async (goalId: string) => {
+    setErrorMessage(null);
+    try {
+      await deleteGoalMutation.mutateAsync(goalId);
+    } catch (e: unknown) {
+      setErrorMessage(e instanceof Error ? e.message : "Errore eliminazione marcatore.");
     }
   };
 
@@ -337,6 +361,51 @@ export function Results() {
         <button className="px-3 py-2 border rounded" type="button" onClick={() => void submitGoal()}>
           Aggiungi marcatore
         </button>
+        {goalDraft.matchId ? (
+          <div className="border rounded overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-100">
+                <tr>
+                  <th className="text-left px-3 py-2">Giocatore</th>
+                  <th className="text-left px-3 py-2">Autogol</th>
+                  <th className="text-left px-3 py-2">Azione</th>
+                </tr>
+              </thead>
+              <tbody>
+                {goalsQuery.isLoading ? (
+                  <tr>
+                    <td className="px-3 py-2" colSpan={3}>
+                      Caricamento marcatori...
+                    </td>
+                  </tr>
+                ) : ((goalsQuery.data || []) as MatchGoal[]).length === 0 ? (
+                  <tr>
+                    <td className="px-3 py-2" colSpan={3}>
+                      Nessun marcatore inserito per questo match.
+                    </td>
+                  </tr>
+                ) : (
+                  ((goalsQuery.data || []) as MatchGoal[]).map((goal) => (
+                    <tr key={goal.id} className="border-t">
+                      <td className="px-3 py-2">{goal.player_name}</td>
+                      <td className="px-3 py-2">{goal.is_own_goal ? "Si" : "No"}</td>
+                      <td className="px-3 py-2">
+                        <button
+                          className="px-2 py-1 border rounded text-red-700"
+                          type="button"
+                          onClick={() => void removeGoal(goal.id)}
+                          disabled={deleteGoalMutation.isPending}
+                        >
+                          Elimina
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
       </section>
 
       <section className="bg-white p-4 rounded shadow space-y-3">

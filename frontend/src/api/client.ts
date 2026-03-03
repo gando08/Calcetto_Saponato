@@ -44,7 +44,9 @@ export const teamApi = {
 };
 
 export const matchApi = {
+  getResult: (mid: string) => api.get(`/api/matches/${mid}/result`).then((r) => r.data),
   setResult: (mid: string, data: unknown) => api.post(`/api/matches/${mid}/result`, data).then((r) => r.data),
+  listGoals: (mid: string) => api.get(`/api/matches/${mid}/goals`).then((r) => r.data),
   addGoal: (mid: string, data: unknown) => api.post(`/api/matches/${mid}/goals`, data).then((r) => r.data),
   deleteGoal: (gid: string) => api.delete(`/api/matches/goals/${gid}`)
 };
