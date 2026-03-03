@@ -54,6 +54,13 @@ export interface Match {
   is_manually_locked: boolean;
 }
 
+export interface ScheduleMatchCard {
+  id: string;
+  status: string;
+  is_manually_locked: boolean;
+  slot: { id: string; start_time: string; end_time: string; day_label: string } | null;
+}
+
 export interface StandingRow {
   team: string;
   team_name: string;

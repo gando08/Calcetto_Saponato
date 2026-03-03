@@ -40,3 +40,10 @@ export const matchApi = {
   addGoal: (mid: string, data: unknown) => api.post(`/api/matches/${mid}/goals`, data).then((r) => r.data),
   deleteGoal: (gid: string) => api.delete(`/api/matches/goals/${gid}`)
 };
+
+export const scheduleApi = {
+  patchMatchSlot: (mid: string, slot_id: string) =>
+    api.patch(`/api/matches/${mid}/slot`, { slot_id }).then((r) => r.data),
+  patchMatchLock: (mid: string, locked: boolean) =>
+    api.patch(`/api/matches/${mid}/lock`, { locked }).then((r) => r.data)
+};
