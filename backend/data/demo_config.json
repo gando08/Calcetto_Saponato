@@ -1,0 +1,48 @@
+{
+  "name": "Torneo Estate 2026",
+  "total_days": 4,
+  "match_duration_minutes": 30,
+  "buffer_minutes": 5,
+  "teams_per_group": 4,
+  "teams_advancing_per_group": 2,
+  "wildcard_enabled": true,
+  "wildcard_count": 2,
+  "points_win": 3,
+  "points_draw": 1,
+  "points_loss": 0,
+  "days": [
+    {
+      "label": "Giorno 1",
+      "date": "2026-07-10",
+      "is_finals_day": false,
+      "time_windows": [
+        { "start": "10:00", "end": "13:00" },
+        { "start": "15:00", "end": "19:00" }
+      ]
+    },
+    {
+      "label": "Giorno 2",
+      "date": "2026-07-11",
+      "is_finals_day": false,
+      "time_windows": [
+        { "start": "10:00", "end": "13:00" },
+        { "start": "15:00", "end": "19:00" }
+      ]
+    },
+    {
+      "label": "Giorno 3",
+      "date": "2026-07-12",
+      "is_finals_day": false,
+      "time_windows": [
+        { "start": "10:00", "end": "13:00" },
+        { "start": "15:00", "end": "19:00" }
+      ]
+    },
+    {
+      "label": "Giorno 4",
+      "date": "2026-07-13",
+      "is_finals_day": true,
+      "time_windows": [{ "start": "10:00", "end": "18:00" }]
+    }
+  ]
+}
