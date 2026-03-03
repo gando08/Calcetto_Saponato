@@ -101,3 +101,35 @@ export interface BracketMatch {
   bracket_position: number;
   prerequisite_positions?: number[];
 }
+
+export interface GroupTeamSummary {
+  id: string;
+  name: string;
+  gender: string;
+}
+
+export interface GroupMatchSummary {
+  id: string;
+  phase: string;
+  round: number;
+  status: string;
+  team_home_id?: string | null;
+  team_away_id?: string | null;
+  team_home: string;
+  team_away: string;
+  slot_id?: string | null;
+}
+
+export interface GroupSummary {
+  id: string;
+  name: string;
+  gender: string;
+  phase: string;
+  teams: GroupTeamSummary[];
+  matches: GroupMatchSummary[];
+}
+
+export interface CompatibilityBlock {
+  teams: Array<{ id: string; name: string }>;
+  matrix: Record<string, Record<string, number>>;
+}
