@@ -2,14 +2,17 @@ import asyncio
 from typing import Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.group import Group
-from app.models.match import Match
+from app.models.match import Match, MatchStatus
+from app.models.slot import Slot
 from app.services.scheduler import apply_solution, get_solver_status, start_scheduling
 
 router = APIRouter(prefix="/api/tournaments", tags=["schedule"])
+manual_router = APIRouter(prefix="/api/matches", tags=["schedule"])
 _ws_clients: Dict[str, List[WebSocket]] = {}
 
 
@@ -82,3 +85,55 @@ def get_schedule(tid: str, db: Session = Depends(get_db)) -> List[dict]:
             }
         )
     return result
+
+
+class MatchSlotPatch(BaseModel):
+    slot_id: str
+
+
+class MatchLockPatch(BaseModel):
+    locked: bool
+
+
+@manual_router.patch("/{mid}/slot")
+def reassign_match_slot(mid: str, payload: MatchSlotPatch, db: Session = Depends(get_db)) -> dict:
+    match = db.query(Match).filter(Match.id == mid).first()
+    if not match:
+        raise HTTPException(404, "Partita non trovata")
+    if match.is_manually_locked:
+        raise HTTPException(400, "Partita bloccata")
+
+    slot = db.query(Slot).filter(Slot.id == payload.slot_id).first()
+    if not slot:
+        raise HTTPException(404, "Slot non trovato")
+
+    occupied_by_other_match = (
+        db.query(Match)
+        .filter(Match.slot_id == payload.slot_id, Match.id != mid)
+        .first()
+    )
+    if occupied_by_other_match:
+        raise HTTPException(409, "Slot occupato")
+
+    if match.slot_id and match.slot_id != payload.slot_id:
+        previous_slot = db.query(Slot).filter(Slot.id == match.slot_id).first()
+        if previous_slot:
+            previous_slot.is_occupied = False
+
+    match.slot_id = payload.slot_id
+    match.status = MatchStatus.SCHEDULED
+    slot.is_occupied = True
+    db.commit()
+
+    return {"ok": True, "match_id": mid, "slot_id": payload.slot_id}
+
+
+@manual_router.patch("/{mid}/lock")
+def set_match_lock(mid: str, payload: MatchLockPatch, db: Session = Depends(get_db)) -> dict:
+    match = db.query(Match).filter(Match.id == mid).first()
+    if not match:
+        raise HTTPException(404, "Partita non trovata")
+
+    match.is_manually_locked = payload.locked
+    db.commit()
+    return {"ok": True, "match_id": mid, "locked": payload.locked}

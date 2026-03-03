@@ -31,6 +31,7 @@ def startup() -> None:
 app.include_router(tournaments.router)
 app.include_router(teams.router)
 app.include_router(schedule.router)
+app.include_router(schedule.manual_router)
 app.include_router(results.router)
 app.include_router(standings.router)
 app.include_router(bracket.router)
