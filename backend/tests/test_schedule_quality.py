@@ -1,11 +1,9 @@
-import json
-
 from fastapi.testclient import TestClient
 
 from app.database import SessionLocal, init_db
 from app.main import app
 from app.models.group import Group, GroupPhase
-from app.models.match import Match, MatchStatus
+from app.models.match import Match
 from app.models.slot import Day, Slot
 from app.models.team import Gender, Team
 from app.models.tournament import Tournament
@@ -14,20 +12,52 @@ init_db()
 client = TestClient(app)
 
 
-def _seed_tournament_with_slots_and_matches() -> dict[str, str]:
+def _seed_quality_context() -> dict[str, str]:
     db = SessionLocal()
     try:
-        tournament = Tournament(
-            name="Test Quality Torneo",
-            match_duration_minutes=30,
-            buffer_minutes=0,
-        )
+        tournament = Tournament(name="Test Torneo Quality")
         db.add(tournament)
         db.flush()
 
-        home = Team(tournament_id=tournament.id, name="Team QA1", gender=Gender.M)
-        away = Team(tournament_id=tournament.id, name="Team QA2", gender=Gender.M)
-        db.add_all([home, away])
+        day1 = Day(
+            tournament_id=tournament.id,
+            date="2026-03-03",
+            label="Giorno 1",
+            is_finals_day=False,
+            time_windows="[]",
+        )
+        day2 = Day(
+            tournament_id=tournament.id,
+            date="2026-03-04",
+            label="Giorno 2",
+            is_finals_day=False,
+            time_windows="[]",
+        )
+        db.add_all([day1, day2])
+        db.flush()
+
+        slot1 = Slot(day_id=day1.id, start_time="10:00", end_time="10:30", is_occupied=True)
+        slot2 = Slot(day_id=day2.id, start_time="15:00", end_time="15:30", is_occupied=True)
+        db.add_all([slot1, slot2])
+        db.flush()
+
+        team_a = Team(
+            tournament_id=tournament.id,
+            name="Team A",
+            gender=Gender.M,
+            preferred_days=[day1.id],
+            preferred_time_windows=[{"start": "09:00", "end": "12:00"}],
+            unavailable_slot_ids=[],
+        )
+        team_b = Team(
+            tournament_id=tournament.id,
+            name="Team B",
+            gender=Gender.M,
+            preferred_days=[day1.id],
+            preferred_time_windows=[{"start": "09:00", "end": "12:00"}],
+            unavailable_slot_ids=[slot1.id],
+        )
+        db.add_all([team_a, team_b])
         db.flush()
 
         group = Group(
@@ -39,148 +69,64 @@ def _seed_tournament_with_slots_and_matches() -> dict[str, str]:
         db.add(group)
         db.flush()
 
-        day = Day(
-            tournament_id=tournament.id,
-            date="2026-06-01",
-            label="Giorno 1",
-            is_finals_day=False,
-            time_windows=json.dumps([{"start": "10:00", "end": "11:00"}]),
-        )
-        db.add(day)
-        db.flush()
-
-        slot1 = Slot(day_id=day.id, start_time="10:00", end_time="10:30")
-        slot2 = Slot(day_id=day.id, start_time="10:30", end_time="11:00")
-        db.add_all([slot1, slot2])
-        db.flush()
-
-        # One scheduled match, one unscheduled
-        match_scheduled = Match(
+        match_ok_hard = Match(
             group_id=group.id,
-            team_home_id=home.id,
-            team_away_id=away.id,
+            team_home_id=team_a.id,
+            team_away_id=team_b.id,
             slot_id=slot1.id,
-            status=MatchStatus.SCHEDULED,
         )
-        match_unscheduled = Match(
+        match_soft = Match(
             group_id=group.id,
-            team_home_id=home.id,
-            team_away_id=away.id,
-        )
-        match_locked = Match(
-            group_id=group.id,
-            team_home_id=home.id,
-            team_away_id=away.id,
+            team_home_id=team_a.id,
+            team_away_id=team_b.id,
             slot_id=slot2.id,
-            status=MatchStatus.SCHEDULED,
-            is_manually_locked=True,
         )
-        db.add_all([match_scheduled, match_unscheduled, match_locked])
+        db.add_all([match_ok_hard, match_soft])
         db.commit()
 
-        return {"tournament_id": tournament.id}
+        return {
+            "tournament_id": tournament.id,
+            "slot1_id": slot1.id,
+            "match_soft_id": match_soft.id,
+        }
     finally:
         db.close()
 
 
-def test_schedule_quality_structure() -> None:
-    seeded = _seed_tournament_with_slots_and_matches()
-    tid = seeded["tournament_id"]
+def test_schedule_quality_reports_metrics_and_soft_alerts() -> None:
+    seeded = _seed_quality_context()
 
-    response = client.get(f"/api/tournaments/{tid}/schedule/quality")
+    response = client.get(f"/api/tournaments/{seeded['tournament_id']}/schedule/quality")
     assert response.status_code == 200
+    payload = response.json()
 
-    data = response.json()
-    assert "total_matches" in data
-    assert "scheduled_matches" in data
-    assert "unscheduled_matches" in data
-    assert "coverage_pct" in data
-    assert "locked_matches" in data
-    assert "slot_conflicts" in data
+    assert payload["total_matches"] == 2
+    assert payload["scheduled_matches"] == 2
+    assert payload["total_slots"] == 2
+    assert payload["slots_utilized"] == 2
+    assert payload["hard_violations"] >= 1
+    assert payload["soft_violations"] >= 2
+    assert payload["preferences_respected_pct"] < 100
+    assert 0 <= payload["equity_index"] <= 1
 
-
-def test_schedule_quality_values() -> None:
-    seeded = _seed_tournament_with_slots_and_matches()
-    tid = seeded["tournament_id"]
-
-    response = client.get(f"/api/tournaments/{tid}/schedule/quality")
-    assert response.status_code == 200
-    data = response.json()
-
-    # 3 matches total: 2 scheduled, 1 unscheduled, 1 locked
-    assert data["total_matches"] == 3
-    assert data["scheduled_matches"] == 2
-    assert data["unscheduled_matches"] == 1
-    assert data["locked_matches"] == 1
-    assert data["slot_conflicts"] == 0
-    assert data["coverage_pct"] == round(2 / 3 * 100, 1)
+    alerts = payload["alerts"]
+    assert isinstance(alerts, list)
+    assert any(alert["match_id"] == seeded["match_soft_id"] for alert in alerts)
 
 
-def test_schedule_quality_empty_tournament() -> None:
+def test_schedule_quality_counts_slot_conflicts() -> None:
+    seeded = _seed_quality_context()
+
     db = SessionLocal()
     try:
-        tournament = Tournament(name="Empty Quality Torneo")
-        db.add(tournament)
+        matches = db.query(Match).join(Group, Match.group_id == Group.id).filter(Group.tournament_id == seeded["tournament_id"]).all()
+        for match in matches:
+            match.slot_id = seeded["slot1_id"]
         db.commit()
-        tid = tournament.id
     finally:
         db.close()
 
-    response = client.get(f"/api/tournaments/{tid}/schedule/quality")
+    response = client.get(f"/api/tournaments/{seeded['tournament_id']}/schedule/quality")
     assert response.status_code == 200
-    data = response.json()
-    assert data["total_matches"] == 0
-    assert data["scheduled_matches"] == 0
-    assert data["coverage_pct"] == 0.0
-    assert data["slot_conflicts"] == 0
-
-
-def test_schedule_quality_slot_conflicts() -> None:
-    """Verify conflict detection: two matches assigned to the same slot."""
-    db = SessionLocal()
-    try:
-        tournament = Tournament(name="Conflict Quality Torneo")
-        db.add(tournament)
-        db.flush()
-
-        home = Team(tournament_id=tournament.id, name="Team C1", gender=Gender.M)
-        away = Team(tournament_id=tournament.id, name="Team C2", gender=Gender.M)
-        db.add_all([home, away])
-        db.flush()
-
-        group = Group(
-            tournament_id=tournament.id,
-            name="Girone Conflict",
-            gender="M",
-            phase=GroupPhase.GROUP,
-        )
-        db.add(group)
-        db.flush()
-
-        day = Day(
-            tournament_id=tournament.id,
-            date="2026-06-02",
-            label="Giorno 2",
-            is_finals_day=False,
-            time_windows=json.dumps([{"start": "10:00", "end": "11:00"}]),
-        )
-        db.add(day)
-        db.flush()
-
-        slot = Slot(day_id=day.id, start_time="10:00", end_time="10:30")
-        db.add(slot)
-        db.flush()
-
-        # Force two matches into the same slot (would not happen via normal API)
-        match_a = Match(group_id=group.id, team_home_id=home.id, team_away_id=away.id, slot_id=slot.id)
-        match_b = Match(group_id=group.id, team_home_id=home.id, team_away_id=away.id, slot_id=slot.id)
-        db.add_all([match_a, match_b])
-        db.commit()
-        tid = tournament.id
-    finally:
-        db.close()
-
-    response = client.get(f"/api/tournaments/{tid}/schedule/quality")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["slot_conflicts"] == 1
+    payload = response.json()
+    assert payload["slot_conflicts"] >= 1

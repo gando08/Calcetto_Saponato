@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -11,6 +12,10 @@ from app.services.group_builder import build_compatibility_matrix, build_groups
 from app.services.round_robin import generate_round_robin
 
 router = APIRouter(prefix="/api/tournaments", tags=["groups"])
+
+
+class GroupTeamsUpdate(BaseModel):
+    team_ids: list[str]
 
 
 def _enum_value(value: object) -> str:
@@ -152,3 +157,68 @@ def get_groups_compatibility(tid: str, db: Session = Depends(get_db)) -> dict:
         }
 
     return payload
+
+
+@router.put("/{tid}/groups/{gid}/teams")
+def update_group_teams(tid: str, gid: str, data: GroupTeamsUpdate, db: Session = Depends(get_db)) -> dict:
+    group = (
+        db.query(Group)
+        .filter(
+            Group.id == gid,
+            Group.tournament_id == tid,
+            Group.phase == GroupPhase.GROUP,
+        )
+        .first()
+    )
+    if not group:
+        raise HTTPException(404, "Girone non trovato")
+
+    ordered_team_ids: list[str] = list(dict.fromkeys(data.team_ids))
+    if len(ordered_team_ids) < 2:
+        raise HTTPException(400, "Servono almeno 2 squadre nel girone")
+
+    teams = db.query(Team).filter(Team.tournament_id == tid, Team.id.in_(ordered_team_ids)).all()
+    teams_by_id = {team.id: team for team in teams}
+    if len(teams_by_id) != len(ordered_team_ids):
+        raise HTTPException(400, "Una o piu squadre non sono valide per il torneo")
+
+    group_gender = _enum_value(group.gender)
+    if any(_enum_value(team.gender) != group_gender for team in teams):
+        raise HTTPException(400, "Le squadre devono avere lo stesso genere del girone")
+
+    selected_set = set(ordered_team_ids)
+    sibling_groups = (
+        db.query(Group)
+        .filter(
+            Group.tournament_id == tid,
+            Group.phase == GroupPhase.GROUP,
+            Group.gender == group.gender,
+        )
+        .all()
+    )
+    for sibling in sibling_groups:
+        if sibling.id == group.id:
+            continue
+        sibling.teams = [team for team in sibling.teams if team.id not in selected_set]
+
+    group.teams = [teams_by_id[team_id] for team_id in ordered_team_ids]
+
+    for match in list(group.matches):
+        db.delete(match)
+    db.flush()
+
+    matches_created = 0
+    for team_home_id, team_away_id in generate_round_robin(ordered_team_ids):
+        db.add(
+            Match(
+                group_id=group.id,
+                team_home_id=team_home_id,
+                team_away_id=team_away_id,
+                phase=MatchPhase.GROUP,
+                round=1,
+            )
+        )
+        matches_created += 1
+
+    db.commit()
+    return {"ok": True, "group_id": group.id, "teams": ordered_team_ids, "matches_created": matches_created}

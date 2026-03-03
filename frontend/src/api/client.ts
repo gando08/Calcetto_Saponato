@@ -14,6 +14,8 @@ export const tournamentApi = {
   getSlots: (id: string) => api.get(`/api/tournaments/${id}/slots`).then((r) => r.data),
   generateGroups: (id: string) => api.post(`/api/tournaments/${id}/groups/generate`).then((r) => r.data),
   getGroups: (id: string) => api.get(`/api/tournaments/${id}/groups`).then((r) => r.data),
+  updateGroupTeams: (id: string, groupId: string, teamIds: string[]) =>
+    api.put(`/api/tournaments/${id}/groups/${groupId}/teams`, { team_ids: teamIds }).then((r) => r.data),
   getGroupsCompatibility: (id: string) => api.get(`/api/tournaments/${id}/groups/compatibility`).then((r) => r.data),
   generateSchedule: (id: string, body: { companion_tournament_ids?: string[] } = {}) =>
     api.post(`/api/tournaments/${id}/schedule/generate`, body).then((r) => r.data),
@@ -28,8 +30,10 @@ export const tournamentApi = {
     api.post(`/api/tournaments/${id}/bracket/${gender}`).then((r) => r.data),
   advanceBracket: (id: string, gender: string, matchId: string, winnerTeamId: string) =>
     api.post(`/api/tournaments/${id}/bracket/${gender}/advance`, { match_id: matchId, winner_team_id: winnerTeamId }).then((r) => r.data),
-  exportCsv: (id: string) => api.get(`/api/tournaments/${id}/export/csv`, { responseType: "blob" }),
-  exportPdf: (id: string) => api.get(`/api/tournaments/${id}/export/pdf`, { responseType: "blob" }),
+  exportCsv: (id: string, params?: { gender?: "M" | "F"; team_id?: string; day_id?: string }) =>
+    api.get(`/api/tournaments/${id}/export/csv`, { responseType: "blob", params }),
+  exportPdf: (id: string, params?: { gender?: "M" | "F"; team_id?: string; day_id?: string }) =>
+    api.get(`/api/tournaments/${id}/export/pdf`, { responseType: "blob", params }),
   getScheduleQuality: (id: string) => api.get(`/api/tournaments/${id}/schedule/quality`).then((r) => r.data),
 };
 

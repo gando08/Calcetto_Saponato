@@ -15,6 +15,11 @@ type TeamFormState = {
   prefers_consecutive: boolean;
 };
 
+type CsvPreview = {
+  headers: string[];
+  rows: string[][];
+};
+
 const EMPTY_FORM: TeamFormState = {
   name: "",
   gender: "M",
@@ -24,20 +29,52 @@ const EMPTY_FORM: TeamFormState = {
   prefers_consecutive: false
 };
 
+function splitCsvLine(line: string) {
+  const cells: string[] = [];
+  let value = "";
+  let quoted = false;
+
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+    const next = line[i + 1];
+
+    if (char === "\"") {
+      if (quoted && next === "\"") {
+        value += "\"";
+        i += 1;
+      } else {
+        quoted = !quoted;
+      }
+      continue;
+    }
+
+    if (char === "," && !quoted) {
+      cells.push(value.trim());
+      value = "";
+      continue;
+    }
+
+    value += char;
+  }
+
+  cells.push(value.trim());
+  return cells;
+}
+
 function parsePreferredWindows(csv: string) {
   return csv
     .split(",")
     .map((entry) => entry.trim())
     .filter(Boolean)
     .map((entry) => {
-      const [start, end] = entry.split("-").map((s) => s.trim());
+      const [start, end] = entry.split("-").map((value) => value.trim());
       return { start, end };
     })
-    .filter((w) => w.start && w.end);
+    .filter((window) => window.start && window.end);
 }
 
 function serializePreferredWindows(windows: Array<{ start: string; end: string }>) {
-  return windows.map((w) => `${w.start}-${w.end}`).join(", ");
+  return windows.map((window) => `${window.start}-${window.end}`).join(", ");
 }
 
 function teamToForm(team: Team): TeamFormState {
@@ -45,7 +82,9 @@ function teamToForm(team: Team): TeamFormState {
     name: team.name,
     gender: team.gender,
     preferred_days_csv: (team.preferred_days || []).join(", "),
-    preferred_windows_csv: serializePreferredWindows((team.preferred_time_windows || []) as Array<{ start: string; end: string }>),
+    preferred_windows_csv: serializePreferredWindows(
+      (team.preferred_time_windows || []) as Array<{ start: string; end: string }>
+    ),
     unavailable_slot_ids: team.unavailable_slot_ids || [],
     prefers_consecutive: team.prefers_consecutive
   };
@@ -57,7 +96,7 @@ function formToPayload(form: TeamFormState) {
     gender: form.gender,
     preferred_days: form.preferred_days_csv
       .split(",")
-      .map((x) => x.trim())
+      .map((value) => value.trim())
       .filter(Boolean),
     preferred_time_windows: parsePreferredWindows(form.preferred_windows_csv),
     unavailable_slot_ids: form.unavailable_slot_ids,
@@ -65,8 +104,7 @@ function formToPayload(form: TeamFormState) {
   };
 }
 
-// Group slots by day for the slot picker
-function groupSlotsByDay(slots: Slot[]): Map<string, Slot[]> {
+function groupSlotsByDay(slots: Slot[]) {
   const grouped = new Map<string, Slot[]>();
   for (const slot of slots) {
     const list = grouped.get(slot.day_label) ?? [];
@@ -86,41 +124,40 @@ function SlotPicker({ slots, selected, onChange }: SlotPickerProps) {
   const byDay = useMemo(() => groupSlotsByDay(slots), [slots]);
 
   if (slots.length === 0) {
-    return (
-      <p className="text-sm text-slate-500 italic">
-        Nessuno slot disponibile. Aggiungi dei giorni al torneo prima.
-      </p>
-    );
+    return <p className="text-sm text-slate-500 italic">Nessuno slot disponibile. Configura prima i giorni del torneo.</p>;
   }
 
   const toggleSlot = (id: string) => {
-    onChange(selected.includes(id) ? selected.filter((s) => s !== id) : [...selected, id]);
+    onChange(selected.includes(id) ? selected.filter((item) => item !== id) : [...selected, id]);
   };
 
   const toggleDay = (daySlots: Slot[]) => {
-    const dayIds = daySlots.map((s) => s.id);
+    const dayIds = daySlots.map((slot) => slot.id);
     const allSelected = dayIds.every((id) => selected.includes(id));
     if (allSelected) {
       onChange(selected.filter((id) => !dayIds.includes(id)));
-    } else {
-      const next = new Set([...selected, ...dayIds]);
-      onChange([...next]);
+      return;
     }
+    const next = new Set([...selected, ...dayIds]);
+    onChange([...next]);
   };
 
   return (
-    <div className="border rounded divide-y max-h-64 overflow-y-auto text-sm">
+    <div className="border rounded-lg divide-y max-h-64 overflow-y-auto text-sm">
       {[...byDay.entries()].map(([dayLabel, daySlots]) => {
-        const dayIds = daySlots.map((s) => s.id);
+        const dayIds = daySlots.map((slot) => slot.id);
         const allSelected = dayIds.every((id) => selected.includes(id));
         const someSelected = !allSelected && dayIds.some((id) => selected.includes(id));
+
         return (
           <div key={dayLabel} className="p-2">
             <label className="flex items-center gap-2 font-medium cursor-pointer">
               <input
                 type="checkbox"
                 checked={allSelected}
-                ref={(el) => { if (el) el.indeterminate = someSelected; }}
+                ref={(element) => {
+                  if (element) element.indeterminate = someSelected;
+                }}
                 onChange={() => toggleDay(daySlots)}
               />
               {dayLabel}
@@ -128,12 +165,10 @@ function SlotPicker({ slots, selected, onChange }: SlotPickerProps) {
             <div className="ml-6 mt-1 flex flex-wrap gap-2">
               {daySlots.map((slot) => (
                 <label key={slot.id} className="flex items-center gap-1 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={selected.includes(slot.id)}
-                    onChange={() => toggleSlot(slot.id)}
-                  />
-                  <span className="text-slate-700">{slot.start_time}–{slot.end_time}</span>
+                  <input type="checkbox" checked={selected.includes(slot.id)} onChange={() => toggleSlot(slot.id)} />
+                  <span className="text-slate-700">
+                    {slot.start_time}-{slot.end_time}
+                  </span>
                 </label>
               ))}
             </div>
@@ -147,19 +182,30 @@ function SlotPicker({ slots, selected, onChange }: SlotPickerProps) {
 export function Teams() {
   const queryClient = useQueryClient();
   const { current, setCurrent } = useTournamentStore();
+
   const [genderFilter, setGenderFilter] = useState<"ALL" | "M" | "F">("ALL");
   const [form, setForm] = useState<TeamFormState>(EMPTY_FORM);
   const [editingTeam, setEditingTeam] = useState<Team | null>(null);
-  const [panelOpen, setPanelOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [importing, setImporting] = useState(false);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvPreview, setCsvPreview] = useState<CsvPreview | null>(null);
+  const [csvLoading, setCsvLoading] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
 
   const tournamentsQuery = useQuery({
     queryKey: ["tournaments"],
     queryFn: () => tournamentApi.list()
   });
 
+  useEffect(() => {
+    if (!current && tournamentsQuery.data?.length) {
+      setCurrent(tournamentsQuery.data[0]);
+    }
+  }, [current, setCurrent, tournamentsQuery.data]);
+
   const activeTid = current?.id || "";
+
   const teamsQuery = useQuery({
     queryKey: ["teams", activeTid],
     queryFn: () => teamApi.list(activeTid),
@@ -169,14 +215,8 @@ export function Teams() {
   const slotsQuery = useQuery({
     queryKey: ["slots", activeTid],
     queryFn: () => tournamentApi.getSlots(activeTid),
-    enabled: Boolean(activeTid) && panelOpen
+    enabled: Boolean(activeTid) && drawerOpen
   });
-
-  useEffect(() => {
-    if (!current && tournamentsQuery.data?.length) {
-      setCurrent(tournamentsQuery.data[0]);
-    }
-  }, [current, setCurrent, tournamentsQuery.data]);
 
   const createMutation = useMutation({
     mutationFn: (payload: unknown) => teamApi.create(activeTid, payload),
@@ -193,28 +233,42 @@ export function Teams() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["teams", activeTid] })
   });
 
+  const importMutation = useMutation({
+    mutationFn: (file: File) => teamApi.import(activeTid, file),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["teams", activeTid] });
+    }
+  });
+
+  const teams = (teamsQuery.data || []) as Team[];
+  const slots = (slotsQuery.data || []) as Slot[];
+
   const filteredTeams = useMemo(() => {
-    const list = (teamsQuery.data || []) as Team[];
-    if (genderFilter === "ALL") return list;
-    return list.filter((team) => team.gender === genderFilter);
-  }, [genderFilter, teamsQuery.data]);
+    if (genderFilter === "ALL") return teams;
+    return teams.filter((team) => team.gender === genderFilter);
+  }, [genderFilter, teams]);
+
+  const maleCount = teams.filter((team) => team.gender === "M").length;
+  const femaleCount = teams.filter((team) => team.gender === "F").length;
+
+  const csvTemplateUrl = `${String(api.defaults.baseURL ?? "http://localhost:8000")}/api/tournaments/${activeTid}/teams/csv-template`;
 
   const openCreate = () => {
     setEditingTeam(null);
     setForm({ ...EMPTY_FORM, gender: (current?.gender as "M" | "F") ?? "M" });
     setErrorMessage(null);
-    setPanelOpen(true);
+    setDrawerOpen(true);
   };
 
   const openEdit = (team: Team) => {
     setEditingTeam(team);
     setForm(teamToForm(team));
     setErrorMessage(null);
-    setPanelOpen(true);
+    setDrawerOpen(true);
   };
 
-  const closePanel = () => {
-    setPanelOpen(false);
+  const closeDrawer = () => {
+    setDrawerOpen(false);
     setEditingTeam(null);
     setForm(EMPTY_FORM);
   };
@@ -231,88 +285,137 @@ export function Teams() {
 
     setErrorMessage(null);
     const payload = formToPayload(form);
-
     try {
       if (editingTeam) {
         await updateMutation.mutateAsync({ id: editingTeam.id, payload });
       } else {
         await createMutation.mutateAsync(payload);
       }
-      closePanel();
-    } catch (e: unknown) {
-      setErrorMessage(e instanceof Error ? e.message : "Errore durante il salvataggio.");
+      closeDrawer();
+    } catch (error: unknown) {
+      setErrorMessage(error instanceof Error ? error.message : "Errore durante il salvataggio.");
     }
   };
 
-  const onDeleteTeam = async (id: string) => {
+  const onDeleteTeam = async (teamId: string) => {
     if (!confirm("Eliminare questa squadra?")) return;
-    try {
-      await deleteMutation.mutateAsync(id);
-    } catch (e: unknown) {
-      setErrorMessage(e instanceof Error ? e.message : "Errore durante l'eliminazione.");
-    }
-  };
-
-  const onImportCsv = async (file: File | null) => {
-    if (!file || !activeTid) return;
-    setImporting(true);
     setErrorMessage(null);
     try {
-      await teamApi.import(activeTid, file);
-      await queryClient.invalidateQueries({ queryKey: ["teams", activeTid] });
-    } catch (e: unknown) {
-      setErrorMessage(e instanceof Error ? e.message : "Errore import CSV.");
-    } finally {
-      setImporting(false);
+      await deleteMutation.mutateAsync(teamId);
+    } catch (error: unknown) {
+      setErrorMessage(error instanceof Error ? error.message : "Errore durante eliminazione squadra.");
     }
   };
 
-  const csvTemplateUrl = `${String(api.defaults.baseURL ?? "http://localhost:8000")}/api/tournaments/${activeTid}/teams/csv-template`;
-  const slots = (slotsQuery.data || []) as Slot[];
+  const clearImportState = () => {
+    setCsvFile(null);
+    setCsvPreview(null);
+    setCsvLoading(false);
+  };
 
-  const maleCount = ((teamsQuery.data || []) as Team[]).filter((t) => t.gender === "M").length;
-  const femaleCount = ((teamsQuery.data || []) as Team[]).filter((t) => t.gender === "F").length;
+  const onSelectCsv = async (file: File | null) => {
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith(".csv")) {
+      setErrorMessage("Seleziona un file .csv.");
+      return;
+    }
+
+    setCsvFile(file);
+    setCsvLoading(true);
+    setErrorMessage(null);
+
+    try {
+      const text = await file.text();
+      const lines = text
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+      if (lines.length === 0) {
+        setCsvPreview({ headers: [], rows: [] });
+        return;
+      }
+
+      const headers = splitCsvLine(lines[0]);
+      const rows = lines.slice(1).map((line) => splitCsvLine(line));
+      setCsvPreview({ headers, rows });
+    } catch (error: unknown) {
+      setErrorMessage(error instanceof Error ? error.message : "Errore lettura file CSV.");
+      clearImportState();
+    } finally {
+      setCsvLoading(false);
+    }
+  };
+
+  const confirmImportCsv = async () => {
+    if (!activeTid) {
+      setErrorMessage("Seleziona prima un torneo.");
+      return;
+    }
+    if (!csvFile) {
+      setErrorMessage("Seleziona un file CSV da importare.");
+      return;
+    }
+
+    setErrorMessage(null);
+    try {
+      await importMutation.mutateAsync(csvFile);
+      clearImportState();
+    } catch (error: unknown) {
+      setErrorMessage(error instanceof Error ? error.message : "Errore import CSV.");
+    }
+  };
 
   return (
     <div className="space-y-4">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">Squadre</h1>
-          <p className="text-slate-600">Gestione squadre, preferenze orarie e import CSV.</p>
-        </div>
-        <button className="px-4 py-2 rounded bg-slate-900 text-white" type="button" onClick={openCreate} disabled={!activeTid}>
-          + Nuova squadra
-        </button>
+      <header>
+        <h1 className="text-2xl font-bold">Squadre</h1>
+        <p className="text-slate-600 text-sm">Gestione squadre, preferenze e indisponibilita con import CSV guidato.</p>
       </header>
 
-      {errorMessage ? <div className="bg-red-100 border border-red-300 text-red-700 p-3 rounded">{errorMessage}</div> : null}
+      {errorMessage ? <div className="rounded-lg border border-red-300 bg-red-100 px-3 py-2 text-red-700 text-sm">{errorMessage}</div> : null}
 
-      <section className="bg-white p-4 rounded shadow space-y-3">
+      <section className="rounded-xl border bg-white p-4 shadow-sm space-y-4">
         <div className="flex flex-wrap gap-3 items-end">
           <label className="flex flex-col gap-1">
-            <span className="text-sm">Torneo attivo</span>
+            <span className="text-xs uppercase tracking-wide text-slate-500">Torneo attivo</span>
             <select
-              className="border rounded px-3 py-2 min-w-64"
+              className="rounded-lg border px-3 py-2 min-w-64"
               value={current?.id || ""}
-              onChange={(e) => {
-                const selected = (tournamentsQuery.data || []).find((t: { id: string }) => t.id === e.target.value);
+              onChange={(event) => {
+                const selected = (tournamentsQuery.data || []).find((t: { id: string }) => t.id === event.target.value);
                 if (selected) setCurrent(selected);
               }}
             >
-              {(tournamentsQuery.data || []).map((t: { id: string; name: string }) => (
-                <option value={t.id} key={t.id}>
-                  {t.name}
+              {(tournamentsQuery.data || []).map((tournament: { id: string; name: string }) => (
+                <option value={tournament.id} key={tournament.id}>
+                  {tournament.name}
                 </option>
               ))}
             </select>
           </label>
 
+          <button className="rounded-lg bg-slate-900 text-white px-4 py-2" type="button" onClick={openCreate} disabled={!activeTid}>
+            + Aggiungi squadra
+          </button>
+
+          <label className="rounded-lg border px-4 py-2 cursor-pointer bg-slate-50 hover:bg-slate-100">
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={(event) => void onSelectCsv(event.target.files?.[0] || null)}
+              disabled={!activeTid || importMutation.isPending}
+            />
+            📥 Importa CSV
+          </label>
+
           <label className="flex flex-col gap-1">
-            <span className="text-sm">Filtro genere</span>
+            <span className="text-xs uppercase tracking-wide text-slate-500">Filtra</span>
             <select
-              className="border rounded px-3 py-2"
+              className="rounded-lg border px-3 py-2"
               value={genderFilter}
-              onChange={(e) => setGenderFilter(e.target.value as "ALL" | "M" | "F")}
+              onChange={(event) => setGenderFilter(event.target.value as "ALL" | "M" | "F")}
             >
               <option value="ALL">Tutti ({maleCount + femaleCount})</option>
               <option value="M">Maschile ({maleCount})</option>
@@ -320,142 +423,200 @@ export function Teams() {
             </select>
           </label>
 
-          <label className="flex flex-col gap-1">
-            <span className="text-sm">Import CSV</span>
-            <input
-              className="border rounded px-3 py-2"
-              type="file"
-              accept=".csv,text/csv"
-              onChange={(e) => void onImportCsv(e.target.files?.[0] || null)}
-              disabled={importing || !activeTid}
-            />
-          </label>
-
           {activeTid ? (
-            <a
-              className="px-3 py-2 border rounded text-sm hover:bg-slate-50"
-              href={csvTemplateUrl}
-              target="_blank"
-              rel="noreferrer"
-            >
-              📥 Template CSV
+            <a className="rounded-lg border px-4 py-2 bg-slate-50 hover:bg-slate-100" href={csvTemplateUrl} target="_blank" rel="noreferrer">
+              Template CSV
             </a>
           ) : null}
         </div>
+
+        <div
+          className={`rounded-xl border-2 border-dashed p-4 text-sm transition-colors ${
+            dragActive ? "border-slate-900 bg-slate-100" : "border-slate-300 bg-slate-50"
+          }`}
+          onDragOver={(event) => {
+            event.preventDefault();
+            setDragActive(true);
+          }}
+          onDragLeave={() => setDragActive(false)}
+          onDrop={(event) => {
+            event.preventDefault();
+            setDragActive(false);
+            void onSelectCsv(event.dataTransfer.files?.[0] || null);
+          }}
+        >
+          Trascina qui un file CSV oppure usa il pulsante import.
+        </div>
+
+        {csvFile || csvPreview ? (
+          <div className="rounded-lg border p-3 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="text-sm">
+                <div className="font-medium">Anteprima import CSV</div>
+                <div className="text-slate-500">
+                  File: <strong>{csvFile?.name ?? "-"}</strong>
+                  {csvPreview ? ` • righe: ${csvPreview.rows.length}` : ""}
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="rounded-lg border px-3 py-2 text-sm"
+                  onClick={() => clearImportState()}
+                  disabled={importMutation.isPending || csvLoading}
+                >
+                  Annulla
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg bg-slate-900 text-white px-3 py-2 text-sm disabled:opacity-50"
+                  onClick={() => void confirmImportCsv()}
+                  disabled={!csvFile || importMutation.isPending || csvLoading}
+                >
+                  {importMutation.isPending ? "Import in corso..." : "Conferma import"}
+                </button>
+              </div>
+            </div>
+
+            {csvLoading ? (
+              <div className="text-sm text-slate-500">Lettura file in corso...</div>
+            ) : csvPreview?.headers.length ? (
+              <div className="overflow-x-auto rounded-lg border">
+                <table className="min-w-full text-xs">
+                  <thead className="bg-slate-100">
+                    <tr>
+                      {csvPreview.headers.map((header, index) => (
+                        <th key={`${header}-${index}`} className="text-left px-2 py-1">
+                          {header}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {csvPreview.rows.slice(0, 8).map((row, rowIndex) => (
+                      <tr key={`preview-${rowIndex}`} className="border-t">
+                        {row.map((cell, cellIndex) => (
+                          <td key={`${rowIndex}-${cellIndex}`} className="px-2 py-1">
+                            {cell || "—"}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {csvPreview.rows.length > 8 ? (
+                  <div className="px-2 py-1 text-xs text-slate-500 border-t">Anteprima limitata a 8 righe.</div>
+                ) : null}
+              </div>
+            ) : (
+              <div className="text-sm text-slate-500">Nessuna riga da mostrare in anteprima.</div>
+            )}
+          </div>
+        ) : null}
       </section>
 
-      <section className="bg-white rounded shadow overflow-x-auto">
-        <table className="min-w-full text-sm">
-          <thead className="bg-slate-100">
-            <tr>
-              <th className="text-left px-3 py-2">Nome</th>
-              <th className="text-left px-3 py-2">Gen.</th>
-              <th className="text-left px-3 py-2">Giorni preferiti</th>
-              <th className="text-left px-3 py-2">Fasce preferite</th>
-              <th className="text-left px-3 py-2">Indisponibilità</th>
-              <th className="text-left px-3 py-2">Consecutive</th>
-              <th className="text-left px-3 py-2">Azioni</th>
-            </tr>
-          </thead>
-          <tbody>
-            {teamsQuery.isLoading ? (
+      <section className="rounded-xl border bg-white shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead className="bg-slate-100">
               <tr>
-                <td className="px-3 py-4" colSpan={7}>
-                  Caricamento...
-                </td>
+                <th className="text-left px-3 py-2">#</th>
+                <th className="text-left px-3 py-2">Nome</th>
+                <th className="text-left px-3 py-2">Genere</th>
+                <th className="text-left px-3 py-2">Preferenze</th>
+                <th className="text-left px-3 py-2">Indisponibilita</th>
+                <th className="text-left px-3 py-2">Azioni</th>
               </tr>
-            ) : filteredTeams.length === 0 ? (
-              <tr>
-                <td className="px-3 py-4" colSpan={7}>
-                  Nessuna squadra disponibile.
-                </td>
-              </tr>
-            ) : (
-              filteredTeams.map((team) => (
-                <tr key={team.id} className="border-t">
-                  <td className="px-3 py-2 font-medium">{team.name}</td>
-                  <td className="px-3 py-2">
-                    <span
-                      className={`px-1.5 py-0.5 text-xs rounded ${
-                        team.gender === "M" ? "bg-blue-100 text-blue-700" : "bg-pink-100 text-pink-700"
-                      }`}
-                    >
-                      {team.gender}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 text-slate-600">{(team.preferred_days || []).join(", ") || "—"}</td>
-                  <td className="px-3 py-2 text-slate-600">
-                    {(team.preferred_time_windows || [])
-                      .map((w) => `${w.start}–${w.end}`)
-                      .join(", ") || "—"}
-                  </td>
-                  <td className="px-3 py-2 text-slate-600">
-                    {(team.unavailable_slot_ids || []).length > 0
-                      ? `${(team.unavailable_slot_ids || []).length} slot`
-                      : "—"}
-                  </td>
-                  <td className="px-3 py-2">{team.prefers_consecutive ? "✓" : "—"}</td>
-                  <td className="px-3 py-2 flex gap-2">
-                    <button className="px-2 py-1 border rounded hover:bg-slate-50" type="button" onClick={() => openEdit(team)}>
-                      Modifica
-                    </button>
-                    <button
-                      className="px-2 py-1 border rounded text-red-700 hover:bg-red-50"
-                      type="button"
-                      onClick={() => void onDeleteTeam(team.id)}
-                    >
-                      Elimina
-                    </button>
+            </thead>
+            <tbody>
+              {teamsQuery.isLoading ? (
+                <tr>
+                  <td className="px-3 py-4" colSpan={6}>
+                    Caricamento squadre...
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : filteredTeams.length === 0 ? (
+                <tr>
+                  <td className="px-3 py-4" colSpan={6}>
+                    Nessuna squadra disponibile.
+                  </td>
+                </tr>
+              ) : (
+                filteredTeams.map((team, index) => (
+                  <tr key={team.id} className="border-t hover:bg-slate-50 cursor-pointer" onClick={() => openEdit(team)}>
+                    <td className="px-3 py-2">{index + 1}</td>
+                    <td className="px-3 py-2 font-medium">{team.name}</td>
+                    <td className="px-3 py-2">
+                      <span className={`px-2 py-0.5 rounded text-xs ${team.gender === "M" ? "bg-blue-100 text-blue-700" : "bg-pink-100 text-pink-700"}`}>
+                        {team.gender}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-slate-600">
+                      {(team.preferred_days || []).join(", ") || "Nessuna"}
+                      <div className="text-xs text-slate-500">
+                        {(team.preferred_time_windows || []).map((window) => `${window.start}-${window.end}`).join(", ") || "Nessuna fascia"}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-slate-600">
+                      {(team.unavailable_slot_ids || []).length > 0 ? `${team.unavailable_slot_ids.length} slot` : "Nessuna"}
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex gap-2" onClick={(event) => event.stopPropagation()}>
+                        <button type="button" className="rounded border px-2 py-1 text-xs" onClick={() => openEdit(team)}>
+                          Modifica
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded border px-2 py-1 text-xs text-red-700"
+                          onClick={() => void onDeleteTeam(team.id)}
+                          disabled={deleteMutation.isPending}
+                        >
+                          Elimina
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </section>
 
-      {panelOpen ? (
+      {drawerOpen ? (
         <div className="fixed inset-0 z-50 bg-black/30 flex justify-end">
           <div className="w-full max-w-xl bg-white h-full p-5 overflow-y-auto space-y-4 shadow-xl">
-            <div className="flex justify-between items-center">
-              <h2 className="text-xl font-semibold">{editingTeam ? "Modifica squadra" : "Nuova squadra"}</h2>
-              <button className="border px-3 py-1 rounded hover:bg-slate-50" type="button" onClick={closePanel}>
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-semibold">{editingTeam ? "Modifica Squadra" : "Nuova Squadra"}</h2>
+              <button type="button" className="rounded border px-3 py-1 hover:bg-slate-50" onClick={closeDrawer}>
                 ✕ Chiudi
               </button>
             </div>
 
-            {errorMessage ? (
-              <div className="bg-red-100 border border-red-300 text-red-700 p-3 rounded text-sm">{errorMessage}</div>
-            ) : null}
-
             <label className="flex flex-col gap-1">
               <span className="text-sm font-medium">Nome squadra *</span>
               <input
-                className="border rounded px-3 py-2"
+                className="rounded-lg border px-3 py-2"
                 value={form.name}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                placeholder="Es. Team Alfa"
+                placeholder="Es. Team Alpha"
+                onChange={(event) => setForm((currentForm) => ({ ...currentForm, name: event.target.value }))}
               />
             </label>
 
             <div className="flex flex-col gap-1">
               <span className="text-sm font-medium">Genere</span>
               {current?.gender ? (
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`px-2 py-1 text-sm rounded font-medium ${
-                      current.gender === "M" ? "bg-blue-100 text-blue-700" : "bg-pink-100 text-pink-700"
-                    }`}
-                  >
+                <div className="inline-flex items-center gap-2">
+                  <span className={`rounded px-2 py-1 text-sm ${current.gender === "M" ? "bg-blue-100 text-blue-700" : "bg-pink-100 text-pink-700"}`}>
                     {current.gender === "M" ? "Maschile (M)" : "Femminile (F)"}
                   </span>
                   <span className="text-xs text-slate-500">Impostato dal torneo</span>
                 </div>
               ) : (
                 <select
-                  className="border rounded px-3 py-2"
+                  className="rounded-lg border px-3 py-2"
                   value={form.gender}
-                  onChange={(e) => setForm((f) => ({ ...f, gender: e.target.value as "M" | "F" }))}
+                  onChange={(event) => setForm((currentForm) => ({ ...currentForm, gender: event.target.value as "M" | "F" }))}
                 >
                   <option value="M">Maschile (M)</option>
                   <option value="F">Femminile (F)</option>
@@ -466,65 +627,63 @@ export function Teams() {
             <label className="flex flex-col gap-1">
               <span className="text-sm font-medium">Giorni preferiti</span>
               <input
-                className="border rounded px-3 py-2"
+                className="rounded-lg border px-3 py-2"
                 placeholder="Es: Giorno 1, Giorno 2"
                 value={form.preferred_days_csv}
-                onChange={(e) => setForm((f) => ({ ...f, preferred_days_csv: e.target.value }))}
+                onChange={(event) => setForm((currentForm) => ({ ...currentForm, preferred_days_csv: event.target.value }))}
               />
-              <span className="text-xs text-slate-500">Etichette separate da virgola. Soft constraint (penalità configurabile).</span>
+              <span className="text-xs text-slate-500">Soft constraint.</span>
             </label>
 
             <label className="flex flex-col gap-1">
               <span className="text-sm font-medium">Fasce orarie preferite</span>
               <input
-                className="border rounded px-3 py-2"
+                className="rounded-lg border px-3 py-2"
                 placeholder="Es: 10:00-13:00, 15:00-18:00"
                 value={form.preferred_windows_csv}
-                onChange={(e) => setForm((f) => ({ ...f, preferred_windows_csv: e.target.value }))}
+                onChange={(event) => setForm((currentForm) => ({ ...currentForm, preferred_windows_csv: event.target.value }))}
               />
-              <span className="text-xs text-slate-500">Fasce HH:MM-HH:MM separate da virgola. Soft constraint.</span>
+              <span className="text-xs text-slate-500">Soft constraint.</span>
             </label>
 
-            <div className="flex flex-col gap-1">
+            <div className="space-y-1">
               <span className="text-sm font-medium">
-                Slot indisponibili
-                {form.unavailable_slot_ids.length > 0 && (
-                  <span className="ml-2 px-1.5 py-0.5 bg-red-100 text-red-700 rounded text-xs">
-                    {form.unavailable_slot_ids.length} selezionati
-                  </span>
-                )}
+                Slot indisponibili{" "}
+                {form.unavailable_slot_ids.length > 0 ? (
+                  <span className="rounded bg-red-100 text-red-700 text-xs px-1.5 py-0.5">{form.unavailable_slot_ids.length}</span>
+                ) : null}
               </span>
-              <span className="text-xs text-slate-500 mb-1">Hard constraint: il solver non assegnerà mai la squadra in questi slot.</span>
+              <p className="text-xs text-slate-500">Hard constraint: la squadra non potra mai essere schedulata in questi slot.</p>
               {slotsQuery.isLoading ? (
-                <p className="text-sm text-slate-400">Caricamento slot...</p>
+                <p className="text-sm text-slate-500">Caricamento slot...</p>
               ) : (
                 <SlotPicker
                   slots={slots}
                   selected={form.unavailable_slot_ids}
-                  onChange={(ids) => setForm((f) => ({ ...f, unavailable_slot_ids: ids }))}
+                  onChange={(ids) => setForm((currentForm) => ({ ...currentForm, unavailable_slot_ids: ids }))}
                 />
               )}
             </div>
 
-            <label className="flex items-center gap-2 cursor-pointer">
+            <label className="inline-flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
                 checked={form.prefers_consecutive}
-                onChange={(e) => setForm((f) => ({ ...f, prefers_consecutive: e.target.checked }))}
+                onChange={(event) => setForm((currentForm) => ({ ...currentForm, prefers_consecutive: event.target.checked }))}
               />
-              <span className="text-sm">Preferisce partite in slot consecutivi (soft constraint)</span>
+              <span className="text-sm">Preferisce partite consecutive (soft)</span>
             </label>
 
-            <div className="flex gap-2 pt-2 border-t">
+            <div className="border-t pt-3 flex gap-2">
               <button
-                className="flex-1 px-4 py-2 bg-slate-900 text-white rounded hover:bg-slate-800 disabled:opacity-50"
                 type="button"
+                className="flex-1 rounded-lg bg-slate-900 text-white px-4 py-2 disabled:opacity-50"
                 onClick={() => void submitForm()}
                 disabled={createMutation.isPending || updateMutation.isPending}
               >
                 {editingTeam ? "Salva modifiche" : "Crea squadra"}
               </button>
-              <button className="px-4 py-2 border rounded hover:bg-slate-50" type="button" onClick={closePanel}>
+              <button type="button" className="rounded-lg border px-4 py-2" onClick={closeDrawer}>
                 Annulla
               </button>
             </div>

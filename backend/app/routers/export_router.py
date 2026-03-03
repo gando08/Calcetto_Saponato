@@ -5,6 +5,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response, StreamingResponse
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -18,9 +19,37 @@ from app.services.standings_calculator import calculate_standings
 router = APIRouter(prefix="/api/tournaments", tags=["export"])
 
 
+def _filtered_matches(
+    tid: str,
+    db: Session,
+    gender: str | None = None,
+    team_id: str | None = None,
+    day_id: str | None = None,
+) -> list[Match]:
+    query = db.query(Match).join(Group, Match.group_id == Group.id).filter(Group.tournament_id == tid)
+
+    normalized_gender = (gender or "").strip().upper()
+    if normalized_gender in {"M", "F"}:
+        query = query.filter(Group.gender == normalized_gender)
+
+    if team_id:
+        query = query.filter(or_(Match.team_home_id == team_id, Match.team_away_id == team_id))
+
+    if day_id:
+        query = query.join(Match.slot).filter(Match.slot.has(day_id=day_id))
+
+    return query.all()
+
+
 @router.get("/{tid}/export/csv")
-def export_csv(tid: str, db: Session = Depends(get_db)) -> StreamingResponse:
-    matches = db.query(Match).join(Group, Match.group_id == Group.id).filter(Group.tournament_id == tid).all()
+def export_csv(
+    tid: str,
+    gender: str | None = None,
+    team_id: str | None = None,
+    day_id: str | None = None,
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    matches = _filtered_matches(tid, db, gender=gender, team_id=team_id, day_id=day_id)
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -113,7 +142,7 @@ def _build_schedule_html(matches: list[Match]) -> str:
     )
 
 
-def _build_standings_html(tournament: Tournament, db: Session) -> str:
+def _build_standings_html(tournament: Tournament, db: Session, gender_filter: str | None = None) -> str:
     config = {
         "points_win": tournament.points_win,
         "points_draw": tournament.points_draw,
@@ -121,11 +150,11 @@ def _build_standings_html(tournament: Tournament, db: Session) -> str:
     }
     tiebreakers = tournament.tiebreaker_order or []
 
-    groups = (
-        db.query(Group)
-        .filter(Group.tournament_id == tournament.id, Group.phase == GroupPhase.GROUP)
-        .all()
-    )
+    groups_query = db.query(Group).filter(Group.tournament_id == tournament.id, Group.phase == GroupPhase.GROUP)
+    normalized_gender = (gender_filter or "").strip().upper()
+    if normalized_gender in {"M", "F"}:
+        groups_query = groups_query.filter(Group.gender == normalized_gender)
+    groups = groups_query.all()
 
     sections = []
     for group in groups:
@@ -176,12 +205,15 @@ def _build_standings_html(tournament: Tournament, db: Session) -> str:
     return "".join(sections) if sections else "<p>Nessun girone trovato.</p>"
 
 
-def _build_scorers_html(tid: str, db: Session) -> str:
+def _build_scorers_html(tid: str, db: Session, gender_filter: str | None = None) -> str:
     goals = (
         db.query(GoalEvent)
         .join(Match, GoalEvent.match_id == Match.id)
         .join(Group, Match.group_id == Group.id)
-        .filter(Group.tournament_id == tid, GoalEvent.is_own_goal.is_(False))
+        .filter(
+            Group.tournament_id == tid,
+            GoalEvent.is_own_goal.is_(False),
+        )
         .all()
     )
 
@@ -206,6 +238,9 @@ def _build_scorers_html(tid: str, db: Session) -> str:
         team_name = team.name if team else "?"
         gender = team.gender if team else "?"
         row = f"<tr><td>{_e(name)}</td><td>{_e(team_name)}</td><td><strong>{count}</strong></td></tr>"
+        if gender_filter and str(gender).upper() != str(gender_filter).upper():
+            continue
+
         if gender == "M":
             m_rows.append(row)
         else:
@@ -254,12 +289,20 @@ tr:nth-child(even) { background-color: #fafafa; }
 """
 
 
-def _build_full_html(tournament: Tournament, matches: list[Match], db: Session) -> str:
+def _build_full_html(
+    tournament: Tournament,
+    matches: list[Match],
+    db: Session,
+    gender_filter: str | None = None,
+    team_id: str | None = None,
+    day_id: str | None = None,
+) -> str:
     now_str = datetime.now().strftime("%d/%m/%Y %H:%M")
 
     schedule_html = _build_schedule_html(matches)
-    standings_html = _build_standings_html(tournament, db)
-    scorers_html = _build_scorers_html(tournament.id, db)
+    include_rankings = not team_id and not day_id
+    standings_html = _build_standings_html(tournament, db, gender_filter=gender_filter) if include_rankings else "<p>Filtra per torneo completo per includere le classifiche.</p>"
+    scorers_html = _build_scorers_html(tournament.id, db, gender_filter=gender_filter) if include_rankings else "<p>Filtra per torneo completo per includere i marcatori.</p>"
 
     return f"""<!DOCTYPE html>
 <html lang="it">
@@ -285,7 +328,13 @@ def _build_full_html(tournament: Tournament, matches: list[Match], db: Session) 
 
 
 @router.get("/{tid}/export/pdf")
-def export_pdf(tid: str, db: Session = Depends(get_db)) -> Response:
+def export_pdf(
+    tid: str,
+    gender: str | None = None,
+    team_id: str | None = None,
+    day_id: str | None = None,
+    db: Session = Depends(get_db),
+) -> Response:
     # Validate tournament existence before attempting WeasyPrint import
     tournament = db.query(Tournament).filter(Tournament.id == tid).first()
     if not tournament:
@@ -296,14 +345,16 @@ def export_pdf(tid: str, db: Session = Depends(get_db)) -> Response:
     except ImportError as exc:
         raise HTTPException(500, "WeasyPrint non installato sul server") from exc
 
-    matches = (
-        db.query(Match)
-        .join(Group, Match.group_id == Group.id)
-        .filter(Group.tournament_id == tid)
-        .all()
-    )
+    matches = _filtered_matches(tid, db, gender=gender, team_id=team_id, day_id=day_id)
 
-    html_content = _build_full_html(tournament, matches, db)
+    html_content = _build_full_html(
+        tournament,
+        matches,
+        db,
+        gender_filter=gender,
+        team_id=team_id,
+        day_id=day_id,
+    )
     pdf_bytes: bytes = HTML(string=html_content).write_pdf()
 
     safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in tournament.name)

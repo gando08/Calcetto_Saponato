@@ -37,6 +37,7 @@ export interface Team {
 export interface Slot {
   id: string;
   day_id: string;
+  date?: string;
   day_label: string;
   start_time: string;
   end_time: string;
@@ -58,7 +59,7 @@ export interface Match {
     yellow_home: number;
     yellow_away: number;
   } | null;
-  slot: { id: string; start_time: string; end_time: string; day_label: string } | null;
+  slot: { id: string; day_id?: string; date?: string; start_time: string; end_time: string; day_label: string } | null;
   group_name: string;
   gender: string;
   is_manually_locked: boolean;
@@ -155,4 +156,26 @@ export interface ScheduleQuality {
   coverage_pct: number;
   locked_matches: number;
   slot_conflicts: number;
+  total_slots?: number;
+  slots_utilized?: number;
+  hard_violations?: number;
+  soft_violations?: number;
+  preference_checks?: number;
+  preference_respected?: number;
+  preferences_respected_pct?: number;
+  equity_index?: number;
+  alerts?: Array<{
+    match_id: string;
+    severity: "soft" | "hard";
+    message: string;
+    reasons: string[];
+  }>;
+  match_health?: Record<
+    string,
+    {
+      level: "ok" | "soft" | "hard";
+      hard: string[];
+      soft: string[];
+    }
+  >;
 }

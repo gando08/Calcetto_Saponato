@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { matchApi, teamApi, tournamentApi } from "../api/client";
+import { matchApi, tournamentApi } from "../api/client";
 import { useTournamentStore } from "../store/tournament";
-import type { Match, MatchGoal, Scorer, StandingRow, Team } from "../types";
+import type { Match, StandingRow } from "../types";
 
 type ResultDraft = {
   goals_home: number;
@@ -20,18 +20,21 @@ const EMPTY_RESULT: ResultDraft = {
   yellow_away: 0
 };
 
+function placementBadge(index: number) {
+  if (index === 0) return "🥇";
+  if (index === 1) return "🥈";
+  if (index === 2) return "🥉";
+  return "";
+}
+
 export function Results() {
   const queryClient = useQueryClient();
   const { current, setCurrent } = useTournamentStore();
+
   const [gender, setGender] = useState<"M" | "F">("M");
+  const [groupTab, setGroupTab] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [resultDrafts, setResultDrafts] = useState<Record<string, ResultDraft>>({});
-  const [goalDraft, setGoalDraft] = useState({
-    matchId: "",
-    playerName: "",
-    attributedTeamId: "",
-    isOwnGoal: false
-  });
 
   const tournamentsQuery = useQuery({
     queryKey: ["tournaments"],
@@ -51,25 +54,11 @@ export function Results() {
     queryFn: () => tournamentApi.getSchedule(tid),
     enabled: Boolean(tid)
   });
-  const teamsQuery = useQuery({
-    queryKey: ["teams", tid],
-    queryFn: () => teamApi.list(tid),
-    enabled: Boolean(tid)
-  });
+
   const standingsQuery = useQuery({
     queryKey: ["standings", tid, gender],
     queryFn: () => tournamentApi.getStandings(tid, gender),
     enabled: Boolean(tid)
-  });
-  const scorersQuery = useQuery({
-    queryKey: ["scorers", tid, gender],
-    queryFn: () => tournamentApi.getScorers(tid, gender),
-    enabled: Boolean(tid)
-  });
-  const goalsQuery = useQuery({
-    queryKey: ["match-goals", goalDraft.matchId],
-    queryFn: () => matchApi.listGoals(goalDraft.matchId),
-    enabled: Boolean(goalDraft.matchId)
   });
 
   const setResultMutation = useMutation({
@@ -80,36 +69,47 @@ export function Results() {
     }
   });
 
-  const addGoalMutation = useMutation({
-    mutationFn: (payload: { mid: string; playerName: string; attributedToTeamId: string; isOwnGoal: boolean }) =>
-      matchApi.addGoal(payload.mid, {
-        player_name: payload.playerName,
-        attributed_to_team_id: payload.attributedToTeamId,
-        is_own_goal: payload.isOwnGoal
-      }),
-    onSuccess: async (_, vars) => {
-      await queryClient.invalidateQueries({ queryKey: ["scorers", tid, gender] });
-      await queryClient.invalidateQueries({ queryKey: ["match-goals", vars.mid] });
+  const standingsBlocks = ((standingsQuery.data || []) as Array<{ group: string; standings: StandingRow[] }>).slice();
+
+  const groupNames = useMemo(() => standingsBlocks.map((block) => block.group), [standingsBlocks]);
+
+  useEffect(() => {
+    if (groupNames.length === 0) {
+      setGroupTab("");
+      return;
     }
-  });
-  const deleteGoalMutation = useMutation({
-    mutationFn: (goalId: string) => matchApi.deleteGoal(goalId),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["scorers", tid, gender] });
-      if (goalDraft.matchId) {
-        await queryClient.invalidateQueries({ queryKey: ["match-goals", goalDraft.matchId] });
+    if (!groupTab || (!groupNames.includes(groupTab) && groupTab !== "wildcard")) {
+      setGroupTab(groupNames[0]);
+    }
+  }, [groupNames, groupTab]);
+
+  const selectedStandings = useMemo(() => {
+    if (groupTab === "wildcard") {
+      const candidates: StandingRow[] = [];
+      for (const block of standingsBlocks) {
+        if (block.standings.length > 1) {
+          candidates.push(block.standings[1]);
+        }
       }
+      return candidates.sort((a, b) => {
+        if (a.points !== b.points) return b.points - a.points;
+        if (a.goal_diff !== b.goal_diff) return b.goal_diff - a.goal_diff;
+        return b.goals_for - a.goals_for;
+      });
     }
-  });
+    return standingsBlocks.find((block) => block.group === groupTab)?.standings || [];
+  }, [groupTab, standingsBlocks]);
 
   const matches = useMemo(() => {
     const all = (scheduleQuery.data || []) as Match[];
-    return all.filter((m) => (m.gender || "").toUpperCase() === gender);
-  }, [scheduleQuery.data, gender]);
+    const genderMatches = all.filter((match) => (match.gender || "").toUpperCase() === gender);
+    if (!groupTab || groupTab === "wildcard") return genderMatches;
+    return genderMatches.filter((match) => match.group_name === groupTab);
+  }, [gender, groupTab, scheduleQuery.data]);
 
   useEffect(() => {
-    setResultDrafts((curr) => {
-      const next = { ...curr };
+    setResultDrafts((currentDrafts) => {
+      const next = { ...currentDrafts };
       for (const match of matches) {
         if (!next[match.id]) {
           next[match.id] = match.result
@@ -126,354 +126,206 @@ export function Results() {
     });
   }, [matches]);
 
-  const selectedGoalMatch = matches.find((m) => m.id === goalDraft.matchId);
-  const teams = (teamsQuery.data || []) as Team[];
-  const allowedTeamIds = [selectedGoalMatch?.team_home_id, selectedGoalMatch?.team_away_id].filter(Boolean) as string[];
-  const goalTeamOptions = teams.filter((team) => {
-    if (team.gender !== gender) return false;
-    if (allowedTeamIds.length === 0) return true;
-    return allowedTeamIds.includes(team.id);
-  });
-
   const updateDraft = (matchId: string, key: keyof ResultDraft, value: number) => {
-    setResultDrafts((curr) => ({
-      ...curr,
-      [matchId]: { ...(curr[matchId] || EMPTY_RESULT), [key]: value }
+    setResultDrafts((currentDrafts) => ({
+      ...currentDrafts,
+      [matchId]: { ...(currentDrafts[matchId] || EMPTY_RESULT), [key]: value }
     }));
   };
 
   const saveResult = async (matchId: string) => {
     setErrorMessage(null);
     try {
-      await setResultMutation.mutateAsync({ matchId, payload: resultDrafts[matchId] || EMPTY_RESULT });
-    } catch (e: unknown) {
-      setErrorMessage(e instanceof Error ? e.message : "Errore salvataggio risultato.");
-    }
-  };
-
-  const submitGoal = async () => {
-    setErrorMessage(null);
-    if (!goalDraft.matchId || !goalDraft.playerName.trim() || !goalDraft.attributedTeamId) {
-      setErrorMessage("Compila match, giocatore e squadra per il marcatore.");
-      return;
-    }
-    try {
-      await addGoalMutation.mutateAsync({
-        mid: goalDraft.matchId,
-        playerName: goalDraft.playerName.trim(),
-        attributedToTeamId: goalDraft.attributedTeamId,
-        isOwnGoal: goalDraft.isOwnGoal
+      await setResultMutation.mutateAsync({
+        matchId,
+        payload: resultDrafts[matchId] || EMPTY_RESULT
       });
-      setGoalDraft((g) => ({ ...g, playerName: "", isOwnGoal: false }));
-    } catch (e: unknown) {
-      setErrorMessage(e instanceof Error ? e.message : "Errore inserimento marcatore.");
-    }
-  };
-
-  const removeGoal = async (goalId: string) => {
-    setErrorMessage(null);
-    try {
-      await deleteGoalMutation.mutateAsync(goalId);
-    } catch (e: unknown) {
-      setErrorMessage(e instanceof Error ? e.message : "Errore eliminazione marcatore.");
+    } catch (error: unknown) {
+      setErrorMessage(error instanceof Error ? error.message : "Errore salvataggio risultato.");
     }
   };
 
   return (
     <div className="space-y-4">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">Risultati, Classifiche e Marcatori</h1>
-          <p className="text-slate-600">Inserisci risultati partita e aggiorna classifiche/marcatori in tempo reale.</p>
-        </div>
+      <header>
+        <h1 className="text-2xl font-bold">Risultati & Classifiche</h1>
+        <p className="text-sm text-slate-600">Gestione risultati inline con classifiche aggiornate in tempo reale.</p>
       </header>
 
-      {errorMessage ? <div className="bg-red-100 border border-red-300 text-red-700 p-3 rounded">{errorMessage}</div> : null}
+      {errorMessage ? <div className="rounded-lg border border-red-300 bg-red-100 px-3 py-2 text-red-700 text-sm">{errorMessage}</div> : null}
 
-      <section className="bg-white p-4 rounded shadow flex flex-wrap gap-3 items-end">
-        <label className="flex flex-col gap-1">
-          <span className="text-sm">Torneo attivo</span>
-          <select
-            className="border rounded px-3 py-2 min-w-64"
-            value={current?.id || ""}
-            onChange={(e) => {
-              const selected = (tournamentsQuery.data || []).find((t: { id: string }) => t.id === e.target.value);
-              if (selected) setCurrent(selected);
-            }}
-          >
-            {(tournamentsQuery.data || []).map((t: { id: string; name: string }) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-sm">Genere</span>
-          <select className="border rounded px-3 py-2" value={gender} onChange={(e) => setGender(e.target.value as "M" | "F")}>
-            <option value="M">Maschile</option>
-            <option value="F">Femminile</option>
-          </select>
-        </label>
-      </section>
-
-      <section className="bg-white p-4 rounded shadow space-y-3">
-        <h2 className="font-semibold">Inserimento risultati</h2>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead className="bg-slate-100">
-              <tr>
-                <th className="text-left px-3 py-2">Match</th>
-                <th className="text-left px-3 py-2">Gol Casa</th>
-                <th className="text-left px-3 py-2">Gol Ospite</th>
-                <th className="text-left px-3 py-2">Gialli Casa</th>
-                <th className="text-left px-3 py-2">Gialli Ospite</th>
-                <th className="text-left px-3 py-2">Azione</th>
-              </tr>
-            </thead>
-            <tbody>
-              {matches.length === 0 ? (
-                <tr>
-                  <td className="px-3 py-3" colSpan={6}>
-                    Nessuna partita trovata per questo genere.
-                  </td>
-                </tr>
-              ) : (
-                matches.map((match) => {
-                  const draft = resultDrafts[match.id] || EMPTY_RESULT;
-                  return (
-                    <tr key={match.id} className="border-t">
-                      <td className="px-3 py-2">
-                        {match.team_home} vs {match.team_away}
-                        <div className="text-xs text-slate-500">
-                          {match.slot ? `${match.slot.day_label} ${match.slot.start_time}` : "Non schedulata"}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2">
-                        <input
-                          className="border rounded px-2 py-1 w-20"
-                          type="number"
-                          min={0}
-                          value={draft.goals_home}
-                          onChange={(e) => updateDraft(match.id, "goals_home", Number(e.target.value))}
-                        />
-                      </td>
-                      <td className="px-3 py-2">
-                        <input
-                          className="border rounded px-2 py-1 w-20"
-                          type="number"
-                          min={0}
-                          value={draft.goals_away}
-                          onChange={(e) => updateDraft(match.id, "goals_away", Number(e.target.value))}
-                        />
-                      </td>
-                      <td className="px-3 py-2">
-                        <input
-                          className="border rounded px-2 py-1 w-20"
-                          type="number"
-                          min={0}
-                          value={draft.yellow_home}
-                          onChange={(e) => updateDraft(match.id, "yellow_home", Number(e.target.value))}
-                        />
-                      </td>
-                      <td className="px-3 py-2">
-                        <input
-                          className="border rounded px-2 py-1 w-20"
-                          type="number"
-                          min={0}
-                          value={draft.yellow_away}
-                          onChange={(e) => updateDraft(match.id, "yellow_away", Number(e.target.value))}
-                        />
-                      </td>
-                      <td className="px-3 py-2">
-                        <button className="px-3 py-1 border rounded" type="button" onClick={() => void saveResult(match.id)}>
-                          Salva
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="bg-white p-4 rounded shadow space-y-3">
-        <h2 className="font-semibold">Inserimento marcatore</h2>
-        <div className="grid md:grid-cols-4 gap-3">
+      <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+        <div className="flex flex-wrap gap-3 items-end">
           <label className="flex flex-col gap-1">
-            <span className="text-sm">Match</span>
+            <span className="text-xs uppercase tracking-wide text-slate-500">Torneo attivo</span>
             <select
-              className="border rounded px-3 py-2"
-              value={goalDraft.matchId}
-              onChange={(e) => {
-                setGoalDraft((g) => ({
-                  ...g,
-                  matchId: e.target.value,
-                  attributedTeamId: ""
-                }));
+              className="rounded-lg border px-3 py-2 min-w-64"
+              value={current?.id || ""}
+              onChange={(event) => {
+                const selected = (tournamentsQuery.data || []).find((t: { id: string }) => t.id === event.target.value);
+                if (selected) setCurrent(selected);
               }}
             >
-              <option value="">Seleziona match</option>
-              {matches.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.team_home} vs {m.team_away}
+              {(tournamentsQuery.data || []).map((tournament: { id: string; name: string }) => (
+                <option key={tournament.id} value={tournament.id}>
+                  {tournament.name}
                 </option>
               ))}
             </select>
           </label>
 
-          <label className="flex flex-col gap-1">
-            <span className="text-sm">Giocatore</span>
-            <input
-              className="border rounded px-3 py-2"
-              value={goalDraft.playerName}
-              onChange={(e) => setGoalDraft((g) => ({ ...g, playerName: e.target.value }))}
-            />
-          </label>
-
-          <label className="flex flex-col gap-1">
-            <span className="text-sm">Squadra attribuzione</span>
-            <select
-              className="border rounded px-3 py-2"
-              value={goalDraft.attributedTeamId}
-              onChange={(e) => setGoalDraft((g) => ({ ...g, attributedTeamId: e.target.value }))}
+          <div className="inline-flex rounded-lg border overflow-hidden">
+            <button
+              type="button"
+              className={`px-4 py-2 text-sm ${gender === "M" ? "bg-slate-900 text-white" : "bg-white text-slate-700"}`}
+              onClick={() => setGender("M")}
             >
-              <option value="">Seleziona squadra</option>
-              {goalTeamOptions.map((team) => (
-                <option key={team.id} value={team.id}>
-                  {team.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <div className="flex items-center gap-2 mt-7">
-            <input
-              type="checkbox"
-              checked={goalDraft.isOwnGoal}
-              onChange={(e) => setGoalDraft((g) => ({ ...g, isOwnGoal: e.target.checked }))}
-            />
-            <span className="text-sm">Autogol</span>
+              Maschile
+            </button>
+            <button
+              type="button"
+              className={`px-4 py-2 text-sm ${gender === "F" ? "bg-slate-900 text-white" : "bg-white text-slate-700"}`}
+              onClick={() => setGender("F")}
+            >
+              Femminile
+            </button>
           </div>
         </div>
-        <button className="px-3 py-2 border rounded" type="button" onClick={() => void submitGoal()}>
-          Aggiungi marcatore
-        </button>
-        {goalDraft.matchId ? (
-          <div className="border rounded overflow-x-auto">
+
+        <div className="flex flex-wrap gap-2">
+          {groupNames.map((groupName) => (
+            <button
+              key={groupName}
+              type="button"
+              className={`rounded-lg border px-3 py-1.5 text-sm ${
+                groupTab === groupName ? "bg-slate-900 text-white border-slate-900" : ""
+              }`}
+              onClick={() => setGroupTab(groupName)}
+            >
+              {groupName}
+            </button>
+          ))}
+          <button
+            type="button"
+            className={`rounded-lg border px-3 py-1.5 text-sm ${
+              groupTab === "wildcard" ? "bg-slate-900 text-white border-slate-900" : ""
+            }`}
+            onClick={() => setGroupTab("wildcard")}
+          >
+            Wild Card
+          </button>
+        </div>
+      </section>
+
+      <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+        <h2 className="font-semibold">{groupTab === "wildcard" ? "Classifica Wild Card" : `Classifica ${groupTab || ""}`}</h2>
+        {selectedStandings.length === 0 ? (
+          <div className="text-sm text-slate-500">Nessuna classifica disponibile.</div>
+        ) : (
+          <div className="overflow-x-auto rounded-lg border">
             <table className="min-w-full text-sm">
               <thead className="bg-slate-100">
                 <tr>
-                  <th className="text-left px-3 py-2">Giocatore</th>
-                  <th className="text-left px-3 py-2">Autogol</th>
-                  <th className="text-left px-3 py-2">Azione</th>
+                  <th className="text-left px-2 py-1">#</th>
+                  <th className="text-left px-2 py-1">Squadra</th>
+                  <th className="text-left px-2 py-1">G</th>
+                  <th className="text-left px-2 py-1">V</th>
+                  <th className="text-left px-2 py-1">P</th>
+                  <th className="text-left px-2 py-1">S</th>
+                  <th className="text-left px-2 py-1">GF</th>
+                  <th className="text-left px-2 py-1">GS</th>
+                  <th className="text-left px-2 py-1">DR</th>
+                  <th className="text-left px-2 py-1">Pt</th>
                 </tr>
               </thead>
               <tbody>
-                {goalsQuery.isLoading ? (
-                  <tr>
-                    <td className="px-3 py-2" colSpan={3}>
-                      Caricamento marcatori...
+                {selectedStandings.map((row, index) => (
+                  <tr key={`${row.team}-${index}`} className="border-t">
+                    <td className="px-2 py-1">{index + 1}</td>
+                    <td className="px-2 py-1 font-medium">
+                      {row.team_name} {placementBadge(index)}
                     </td>
+                    <td className="px-2 py-1">{row.played}</td>
+                    <td className="px-2 py-1">{row.won}</td>
+                    <td className="px-2 py-1">{row.drawn}</td>
+                    <td className="px-2 py-1">{row.lost}</td>
+                    <td className="px-2 py-1">{row.goals_for}</td>
+                    <td className="px-2 py-1">{row.goals_against}</td>
+                    <td className="px-2 py-1">{row.goal_diff}</td>
+                    <td className="px-2 py-1 font-semibold">{row.points}</td>
                   </tr>
-                ) : ((goalsQuery.data || []) as MatchGoal[]).length === 0 ? (
-                  <tr>
-                    <td className="px-3 py-2" colSpan={3}>
-                      Nessun marcatore inserito per questo match.
-                    </td>
-                  </tr>
-                ) : (
-                  ((goalsQuery.data || []) as MatchGoal[]).map((goal) => (
-                    <tr key={goal.id} className="border-t">
-                      <td className="px-3 py-2">{goal.player_name}</td>
-                      <td className="px-3 py-2">{goal.is_own_goal ? "Si" : "No"}</td>
-                      <td className="px-3 py-2">
-                        <button
-                          className="px-2 py-1 border rounded text-red-700"
-                          type="button"
-                          onClick={() => void removeGoal(goal.id)}
-                          disabled={deleteGoalMutation.isPending}
-                        >
-                          Elimina
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
+                ))}
               </tbody>
             </table>
           </div>
-        ) : null}
-      </section>
-
-      <section className="bg-white p-4 rounded shadow space-y-3">
-        <h2 className="font-semibold">Classifiche</h2>
-        {(standingsQuery.data || []).length === 0 ? (
-          <div className="text-sm text-slate-500">Nessuna classifica disponibile.</div>
-        ) : (
-          ((standingsQuery.data || []) as Array<{ group: string; standings: StandingRow[] }>).map((groupBlock) => (
-            <div key={groupBlock.group} className="border rounded overflow-x-auto">
-              <div className="bg-slate-100 px-3 py-2 font-medium">{groupBlock.group}</div>
-              <table className="min-w-full text-sm">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="text-left px-2 py-1">Team</th>
-                    <th className="text-left px-2 py-1">Pt</th>
-                    <th className="text-left px-2 py-1">V</th>
-                    <th className="text-left px-2 py-1">N</th>
-                    <th className="text-left px-2 py-1">P</th>
-                    <th className="text-left px-2 py-1">GF</th>
-                    <th className="text-left px-2 py-1">GS</th>
-                    <th className="text-left px-2 py-1">Diff</th>
-                    <th className="text-left px-2 py-1">Fair Play</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {groupBlock.standings.map((row) => (
-                    <tr key={row.team} className="border-t">
-                      <td className="px-2 py-1">{row.team_name}</td>
-                      <td className="px-2 py-1">{row.points}</td>
-                      <td className="px-2 py-1">{row.won}</td>
-                      <td className="px-2 py-1">{row.drawn}</td>
-                      <td className="px-2 py-1">{row.lost}</td>
-                      <td className="px-2 py-1">{row.goals_for}</td>
-                      <td className="px-2 py-1">{row.goals_against}</td>
-                      <td className="px-2 py-1">{row.goal_diff}</td>
-                      <td className="px-2 py-1">{row.yellow_cards}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ))
         )}
       </section>
 
-      <section className="bg-white p-4 rounded shadow space-y-3">
-        <h2 className="font-semibold">Marcatori</h2>
-        {((scorersQuery.data || []) as Scorer[]).length === 0 ? (
-          <div className="text-sm text-slate-500">Nessun marcatore registrato.</div>
+      <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+        <h2 className="font-semibold">Match del girone (inserimento risultati inline)</h2>
+        {matches.length === 0 ? (
+          <div className="text-sm text-slate-500">Nessuna partita disponibile per questo filtro.</div>
         ) : (
-          <table className="min-w-full text-sm">
-            <thead className="bg-slate-100">
-              <tr>
-                <th className="text-left px-3 py-2">Giocatore</th>
-                <th className="text-left px-3 py-2">Squadra</th>
-                <th className="text-left px-3 py-2">Gol</th>
-              </tr>
-            </thead>
-            <tbody>
-              {((scorersQuery.data || []) as Scorer[]).map((s, idx) => (
-                <tr key={`${s.player}-${s.team}-${idx}`} className="border-t">
-                  <td className="px-3 py-2">{s.player}</td>
-                  <td className="px-3 py-2">{s.team}</td>
-                  <td className="px-3 py-2 font-semibold">{s.goals}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="space-y-2">
+            {matches.map((match) => {
+              const draft = resultDrafts[match.id] || EMPTY_RESULT;
+              return (
+                <div key={match.id} className="rounded-lg border p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="font-medium">
+                      {match.team_home} vs {match.team_away}
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      {match.slot ? `${match.slot.day_label} ${match.slot.start_time}` : "Da schedulare"}
+                    </div>
+                  </div>
+
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+                    <input
+                      type="number"
+                      min={0}
+                      className="rounded border px-2 py-1 w-16"
+                      value={draft.goals_home}
+                      onChange={(event) => updateDraft(match.id, "goals_home", Number(event.target.value))}
+                    />
+                    <span>-</span>
+                    <input
+                      type="number"
+                      min={0}
+                      className="rounded border px-2 py-1 w-16"
+                      value={draft.goals_away}
+                      onChange={(event) => updateDraft(match.id, "goals_away", Number(event.target.value))}
+                    />
+
+                    <span className="ml-2 text-xs text-slate-500">Gialli</span>
+                    <input
+                      type="number"
+                      min={0}
+                      className="rounded border px-2 py-1 w-14"
+                      value={draft.yellow_home}
+                      onChange={(event) => updateDraft(match.id, "yellow_home", Number(event.target.value))}
+                    />
+                    <input
+                      type="number"
+                      min={0}
+                      className="rounded border px-2 py-1 w-14"
+                      value={draft.yellow_away}
+                      onChange={(event) => updateDraft(match.id, "yellow_away", Number(event.target.value))}
+                    />
+
+                    <button
+                      type="button"
+                      className="rounded border px-3 py-1 text-sm"
+                      onClick={() => void saveResult(match.id)}
+                      disabled={setResultMutation.isPending}
+                    >
+                      {setResultMutation.isPending ? "Salvataggio..." : "Salva"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         )}
       </section>
     </div>

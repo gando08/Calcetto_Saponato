@@ -24,7 +24,7 @@ init_db()
 client = TestClient(app)
 
 
-def _seed_exportable_tournament() -> str:
+def _seed_exportable_tournament() -> dict:
     db = SessionLocal()
     try:
         tournament = Tournament(
@@ -35,57 +35,87 @@ def _seed_exportable_tournament() -> str:
         db.add(tournament)
         db.flush()
 
-        home = Team(tournament_id=tournament.id, name="Export Home", gender=Gender.M)
-        away = Team(tournament_id=tournament.id, name="Export Away", gender=Gender.M)
-        db.add_all([home, away])
+        m_home = Team(tournament_id=tournament.id, name="Export Home M", gender=Gender.M)
+        m_away = Team(tournament_id=tournament.id, name="Export Away M", gender=Gender.M)
+        f_home = Team(tournament_id=tournament.id, name="Export Home F", gender=Gender.F)
+        f_away = Team(tournament_id=tournament.id, name="Export Away F", gender=Gender.F)
+        db.add_all([m_home, m_away, f_home, f_away])
         db.flush()
 
-        group = Group(
+        group_m = Group(
             tournament_id=tournament.id,
-            name="Girone Export",
+            name="Girone Export M",
             gender="M",
             phase=GroupPhase.GROUP,
         )
-        db.add(group)
+        group_f = Group(
+            tournament_id=tournament.id,
+            name="Girone Export F",
+            gender="F",
+            phase=GroupPhase.GROUP,
+        )
+        db.add_all([group_m, group_f])
         db.flush()
 
         import json
-        day = Day(
+        day1 = Day(
             tournament_id=tournament.id,
             date="2026-06-01",
             label="Giorno 1",
             is_finals_day=False,
             time_windows=json.dumps([{"start": "10:00", "end": "10:30"}]),
         )
-        db.add(day)
+        day2 = Day(
+            tournament_id=tournament.id,
+            date="2026-06-02",
+            label="Giorno 2",
+            is_finals_day=False,
+            time_windows=json.dumps([{"start": "10:00", "end": "10:30"}]),
+        )
+        db.add_all([day1, day2])
         db.flush()
 
-        slot = Slot(day_id=day.id, start_time="10:00", end_time="10:30")
-        db.add(slot)
+        slot1 = Slot(day_id=day1.id, start_time="10:00", end_time="10:30")
+        slot2 = Slot(day_id=day2.id, start_time="10:00", end_time="10:30")
+        db.add_all([slot1, slot2])
         db.flush()
 
-        match = Match(
-            group_id=group.id,
-            team_home_id=home.id,
-            team_away_id=away.id,
-            slot_id=slot.id,
+        match_m = Match(
+            group_id=group_m.id,
+            team_home_id=m_home.id,
+            team_away_id=m_away.id,
+            slot_id=slot1.id,
             status=MatchStatus.PLAYED,
         )
-        db.add(match)
+        match_f = Match(
+            group_id=group_f.id,
+            team_home_id=f_home.id,
+            team_away_id=f_away.id,
+            slot_id=slot2.id,
+            status=MatchStatus.PLAYED,
+        )
+        db.add_all([match_m, match_f])
         db.flush()
 
-        result = Result(match_id=match.id, goals_home=3, goals_away=1)
-        db.add(result)
+        result_m = Result(match_id=match_m.id, goals_home=3, goals_away=1)
+        result_f = Result(match_id=match_f.id, goals_home=2, goals_away=2)
+        db.add_all([result_m, result_f])
 
         db.commit()
-        return tournament.id
+        return {
+            "tid": tournament.id,
+            "day1_id": day1.id,
+            "day2_id": day2.id,
+            "m_home_id": m_home.id,
+            "f_home_id": f_home.id,
+        }
     finally:
         db.close()
 
 
 def test_export_csv_returns_csv_content() -> None:
-    tid = _seed_exportable_tournament()
-    response = client.get(f"/api/tournaments/{tid}/export/csv")
+    seeded = _seed_exportable_tournament()
+    response = client.get(f"/api/tournaments/{seeded['tid']}/export/csv")
 
     assert response.status_code == 200
     assert "text/csv" in response.headers["content-type"]
@@ -94,13 +124,13 @@ def test_export_csv_returns_csv_content() -> None:
     assert "Squadra Casa" in content
     assert "Squadra Ospite" in content
     # Data row
-    assert "Export Home" in content
-    assert "Export Away" in content
+    assert "Export Home M" in content
+    assert "Export Away M" in content
 
 
 def test_export_csv_includes_results() -> None:
-    tid = _seed_exportable_tournament()
-    response = client.get(f"/api/tournaments/{tid}/export/csv")
+    seeded = _seed_exportable_tournament()
+    response = client.get(f"/api/tournaments/{seeded['tid']}/export/csv")
 
     assert response.status_code == 200
     content = response.text
@@ -110,8 +140,8 @@ def test_export_csv_includes_results() -> None:
 
 
 def test_export_csv_content_disposition_header() -> None:
-    tid = _seed_exportable_tournament()
-    response = client.get(f"/api/tournaments/{tid}/export/csv")
+    seeded = _seed_exportable_tournament()
+    response = client.get(f"/api/tournaments/{seeded['tid']}/export/csv")
 
     assert response.status_code == 200
     content_disp = response.headers.get("content-disposition", "")
@@ -119,10 +149,40 @@ def test_export_csv_content_disposition_header() -> None:
     assert ".csv" in content_disp
 
 
+def test_export_csv_can_filter_by_gender() -> None:
+    seeded = _seed_exportable_tournament()
+    response = client.get(f"/api/tournaments/{seeded['tid']}/export/csv?gender=M")
+
+    assert response.status_code == 200
+    content = response.text
+    assert "Export Home M" in content
+    assert "Export Home F" not in content
+
+
+def test_export_csv_can_filter_by_day_id() -> None:
+    seeded = _seed_exportable_tournament()
+    response = client.get(f"/api/tournaments/{seeded['tid']}/export/csv?day_id={seeded['day2_id']}")
+
+    assert response.status_code == 200
+    content = response.text
+    assert "Giorno 2" in content
+    assert "Giorno 1" not in content
+
+
+def test_export_csv_can_filter_by_team_id() -> None:
+    seeded = _seed_exportable_tournament()
+    response = client.get(f"/api/tournaments/{seeded['tid']}/export/csv?team_id={seeded['f_home_id']}")
+
+    assert response.status_code == 200
+    content = response.text
+    assert "Export Home F" in content
+    assert "Export Home M" not in content
+
+
 @skip_without_weasyprint
 def test_export_pdf_returns_pdf_bytes() -> None:
-    tid = _seed_exportable_tournament()
-    response = client.get(f"/api/tournaments/{tid}/export/pdf")
+    seeded = _seed_exportable_tournament()
+    response = client.get(f"/api/tournaments/{seeded['tid']}/export/pdf")
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/pdf"
@@ -132,8 +192,8 @@ def test_export_pdf_returns_pdf_bytes() -> None:
 
 @skip_without_weasyprint
 def test_export_pdf_content_disposition_header() -> None:
-    tid = _seed_exportable_tournament()
-    response = client.get(f"/api/tournaments/{tid}/export/pdf")
+    seeded = _seed_exportable_tournament()
+    response = client.get(f"/api/tournaments/{seeded['tid']}/export/pdf")
 
     assert response.status_code == 200
     content_disp = response.headers.get("content-disposition", "")

@@ -1,4 +1,5 @@
 import asyncio
+from collections import Counter, defaultdict
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, WebSocket, WebSocketDisconnect
@@ -9,6 +10,7 @@ from app.database import get_db
 from app.models.group import Group
 from app.models.match import Match, MatchStatus
 from app.models.slot import Slot
+from app.models.team import Team
 from app.services.scheduler import apply_solution, get_solver_status, start_scheduling
 
 router = APIRouter(prefix="/api/tournaments", tags=["schedule"])
@@ -39,6 +41,30 @@ class GenerateBody(BaseModel):
     companion_tournament_ids: Optional[List[str]] = None
 
 
+def _norm(value: str | None) -> str:
+    return (value or "").strip().lower()
+
+
+def _is_preferred_day(preferred_days: list, day_id: str, day_label: str, day_date: str) -> bool:
+    if not preferred_days:
+        return True
+    normalized = {_norm(str(item)) for item in preferred_days}
+    return _norm(day_id) in normalized or _norm(day_label) in normalized or _norm(day_date) in normalized
+
+
+def _is_preferred_window(preferred_windows: list, start_time: str) -> bool:
+    if not preferred_windows:
+        return True
+    for window in preferred_windows:
+        start = window.get("start")
+        end = window.get("end")
+        if not start or not end:
+            continue
+        if start <= start_time < end:
+            return True
+    return False
+
+
 @router.post("/{tid}/schedule/generate")
 async def generate_schedule(
     tid: str,
@@ -63,18 +89,113 @@ def schedule_status(tid: str) -> dict:
 
 @router.get("/{tid}/schedule/quality")
 def schedule_quality(tid: str, db: Session = Depends(get_db)) -> dict:
+    slots = (
+        db.query(Slot)
+        .join(Slot.day)
+        .filter(Slot.day.has(tournament_id=tid))
+        .all()
+    )
+    slot_by_id = {slot.id: slot for slot in slots}
+
     matches = (
         db.query(Match)
         .join(Group, Match.group_id == Group.id)
         .filter(Group.tournament_id == tid)
         .all()
     )
+    team_ids = {team_id for match in matches for team_id in [match.team_home_id, match.team_away_id] if team_id}
+    teams = db.query(Team).filter(Team.id.in_(team_ids)).all() if team_ids else []
+    teams_by_id = {team.id: team for team in teams}
 
     total = len(matches)
     scheduled = sum(1 for m in matches if m.slot_id is not None)
     locked = sum(1 for m in matches if m.is_manually_locked)
     slot_ids = [m.slot_id for m in matches if m.slot_id]
     conflicts = max(0, len(slot_ids) - len(set(slot_ids)))
+    slot_counts = Counter(slot_ids)
+    conflicted_slot_ids = {slot_id for slot_id, count in slot_counts.items() if count > 1}
+
+    hard_violations = 0
+    soft_violations = 0
+    preference_checks = 0
+    preference_respected = 0
+    alerts: list[dict] = []
+    match_health: dict[str, dict] = {}
+    team_day_counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+
+    for match in matches:
+        hard_reasons: list[str] = []
+        soft_reasons: list[str] = []
+
+        if not match.slot_id:
+            match_health[match.id] = {"level": "hard", "hard": ["non_schedulato"], "soft": []}
+            hard_violations += 1
+            continue
+
+        slot = slot_by_id.get(match.slot_id)
+        if not slot or not slot.day:
+            hard_reasons.append("slot_non_valido")
+        else:
+            for team_id in [match.team_home_id, match.team_away_id]:
+                if team_id:
+                    team_day_counts[team_id][slot.day_id] += 1
+
+            if match.slot_id in conflicted_slot_ids:
+                hard_reasons.append("slot_conflitto")
+
+            for team_id in [match.team_home_id, match.team_away_id]:
+                if not team_id:
+                    continue
+                team = teams_by_id.get(team_id)
+                if not team:
+                    continue
+
+                if match.slot_id in (team.unavailable_slot_ids or []):
+                    hard_reasons.append(f"indisponibilita:{team.name}")
+
+                pref_days = team.preferred_days or []
+                if pref_days:
+                    preference_checks += 1
+                    if _is_preferred_day(pref_days, slot.day_id, slot.day.label, slot.day.date):
+                        preference_respected += 1
+                    else:
+                        soft_reasons.append(f"giorno_non_preferito:{team.name}")
+
+                pref_windows = team.preferred_time_windows or []
+                if pref_windows:
+                    preference_checks += 1
+                    if _is_preferred_window(pref_windows, slot.start_time):
+                        preference_respected += 1
+                    else:
+                        soft_reasons.append(f"fascia_non_preferita:{team.name}")
+
+        hard_violations += len(hard_reasons)
+        soft_violations += len(soft_reasons)
+        level = "hard" if hard_reasons else ("soft" if soft_reasons else "ok")
+        match_health[match.id] = {"level": level, "hard": hard_reasons, "soft": soft_reasons}
+
+        if soft_reasons:
+            alerts.append(
+                {
+                    "match_id": match.id,
+                    "severity": "soft",
+                    "message": f"{match.team_home.name if match.team_home else '?'} vs {match.team_away.name if match.team_away else '?'}",
+                    "reasons": soft_reasons,
+                }
+            )
+
+    team_scores = []
+    for day_counts in team_day_counts.values():
+        total_team_matches = sum(day_counts.values())
+        if total_team_matches <= 1:
+            team_scores.append(1.0)
+            continue
+        values = list(day_counts.values())
+        imbalance = (max(values) - min(values)) / total_team_matches
+        team_scores.append(max(0.0, 1.0 - imbalance))
+
+    total_slots = len(slots)
+    preferences_respected_pct = round(preference_respected / preference_checks * 100, 1) if preference_checks > 0 else 100.0
 
     return {
         "total_matches": total,
@@ -83,6 +204,16 @@ def schedule_quality(tid: str, db: Session = Depends(get_db)) -> dict:
         "coverage_pct": round(scheduled / total * 100, 1) if total > 0 else 0.0,
         "locked_matches": locked,
         "slot_conflicts": conflicts,
+        "total_slots": total_slots,
+        "slots_utilized": scheduled,
+        "hard_violations": hard_violations,
+        "soft_violations": soft_violations,
+        "preference_checks": preference_checks,
+        "preference_respected": preference_respected,
+        "preferences_respected_pct": preferences_respected_pct,
+        "equity_index": round(sum(team_scores) / len(team_scores), 2) if team_scores else 1.0,
+        "alerts": alerts[:20],
+        "match_health": match_health,
     }
 
 
@@ -118,6 +249,8 @@ def get_schedule(tid: str, db: Session = Depends(get_db)) -> List[dict]:
                 else None,
                 "slot": {
                     "id": match.slot.id,
+                    "day_id": match.slot.day_id,
+                    "date": match.slot.day.date if match.slot.day else "",
                     "start_time": match.slot.start_time,
                     "end_time": match.slot.end_time,
                     "day_label": match.slot.day.label if match.slot.day else "",
