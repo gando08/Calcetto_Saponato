@@ -1,0 +1,38 @@
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&family=Sora:wght@400;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --app-bg: #f3f8fc;
+  --app-bg-accent: #e8f1ff;
+  --app-text: #102a43;
+  --app-muted: #486581;
+  --card-bg: #ffffff;
+  --card-border: #d9e2ec;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--app-text);
+  font-family: "Manrope", "Segoe UI", sans-serif;
+  background:
+    radial-gradient(900px 420px at -10% -20%, rgba(94, 165, 255, 0.22), transparent 70%),
+    radial-gradient(760px 380px at 110% -10%, rgba(16, 42, 67, 0.1), transparent 70%),
+    linear-gradient(160deg, var(--app-bg), var(--app-bg-accent));
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: "Sora", "Manrope", sans-serif;
+}
+
+.bg-app-surface {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.65), rgba(255, 255, 255, 0.9)),
+    linear-gradient(160deg, var(--app-bg), var(--app-bg-accent));
+}

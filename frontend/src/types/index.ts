@@ -1,0 +1,190 @@
+export interface Tournament {
+  id: string;
+  name: string;
+  status: string;
+  total_days: number;
+  match_duration_minutes: number;
+  buffer_minutes: number;
+  teams_per_group: number;
+  teams_advancing_per_group: number;
+  wildcard_enabled: boolean;
+  wildcard_count: number;
+  points_win: number;
+  points_draw: number;
+  points_loss: number;
+  tiebreaker_order: string[];
+  penalty_weights: Record<string, number>;
+  gender?: "M" | "F" | null;
+  max_teams?: number | null;
+}
+
+export interface TimeWindow {
+  start: string;
+  end: string;
+}
+
+export interface Team {
+  id: string;
+  tournament_id: string;
+  name: string;
+  gender: "M" | "F";
+  preferred_days: string[];
+  preferred_time_windows: TimeWindow[];
+  unavailable_slot_ids: string[];
+  prefers_consecutive: boolean;
+}
+
+export interface Slot {
+  id: string;
+  day_id: string;
+  date?: string;
+  day_label: string;
+  start_time: string;
+  end_time: string;
+  is_occupied: boolean;
+  is_finals_day: boolean;
+}
+
+export interface TournamentDay {
+  id: string;
+  date: string;
+  label: string;
+  is_finals_day: boolean;
+  time_windows: TimeWindow[];
+  slots_count?: number;
+}
+
+export interface Match {
+  id: string;
+  phase: string;
+  status: string;
+  team_home_id?: string | null;
+  team_away_id?: string | null;
+  team_home: string;
+  team_away: string;
+  result?: {
+    goals_home: number;
+    goals_away: number;
+    yellow_home: number;
+    yellow_away: number;
+  } | null;
+  slot: { id: string; day_id?: string; date?: string; start_time: string; end_time: string; day_label: string } | null;
+  group_name: string;
+  gender: string;
+  is_manually_locked: boolean;
+}
+
+export interface ScheduleMatchCard {
+  id: string;
+  status: string;
+  is_manually_locked: boolean;
+  slot: { id: string; start_time: string; end_time: string; day_label: string } | null;
+}
+
+export interface StandingRow {
+  team: string;
+  team_name: string;
+  played: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  goals_for: number;
+  goals_against: number;
+  goal_diff: number;
+  points: number;
+  yellow_cards: number;
+}
+
+export interface Scorer {
+  player: string;
+  team: string;
+  team_gender: string;
+  goals: number;
+}
+
+export interface MatchGoal {
+  id: string;
+  match_id: string;
+  player_name: string;
+  is_own_goal: boolean;
+  attributed_to_team_id: string;
+}
+
+export interface BracketMatch {
+  id?: string;
+  phase: string;
+  round: number;
+  gender: string;
+  status?: string;
+  team_home_id?: string | null;
+  team_away_id?: string | null;
+  placeholder_home: string;
+  placeholder_away: string;
+  bracket_position: number;
+  prerequisite_positions?: number[];
+  prerequisite_match_home_id?: string | null;
+  prerequisite_match_away_id?: string | null;
+}
+
+export interface GroupTeamSummary {
+  id: string;
+  name: string;
+  gender: string;
+}
+
+export interface GroupMatchSummary {
+  id: string;
+  phase: string;
+  round: number;
+  status: string;
+  team_home_id?: string | null;
+  team_away_id?: string | null;
+  team_home: string;
+  team_away: string;
+  slot_id?: string | null;
+}
+
+export interface GroupSummary {
+  id: string;
+  name: string;
+  gender: string;
+  phase: string;
+  teams: GroupTeamSummary[];
+  matches: GroupMatchSummary[];
+}
+
+export interface CompatibilityBlock {
+  teams: Array<{ id: string; name: string }>;
+  matrix: Record<string, Record<string, number>>;
+}
+
+export interface ScheduleQuality {
+  total_matches: number;
+  scheduled_matches: number;
+  unscheduled_matches: number;
+  coverage_pct: number;
+  locked_matches: number;
+  slot_conflicts: number;
+  total_slots?: number;
+  slots_utilized?: number;
+  hard_violations?: number;
+  soft_violations?: number;
+  preference_checks?: number;
+  preference_respected?: number;
+  preferences_respected_pct?: number;
+  equity_index?: number;
+  alerts?: Array<{
+    match_id: string;
+    severity: "soft" | "hard";
+    message: string;
+    reasons: string[];
+  }>;
+  match_health?: Record<
+    string,
+    {
+      level: "ok" | "soft" | "hard";
+      hard: string[];
+      soft: string[];
+    }
+  >;
+}
