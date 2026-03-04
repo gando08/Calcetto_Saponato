@@ -34,61 +34,39 @@ function splitCsvLine(line: string) {
   const cells: string[] = [];
   let value = "";
   let quoted = false;
-
   for (let i = 0; i < line.length; i += 1) {
     const char = line[i];
     const next = line[i + 1];
-
     if (char === "\"") {
-      if (quoted && next === "\"") {
-        value += "\"";
-        i += 1;
-      } else {
-        quoted = !quoted;
-      }
+      if (quoted && next === "\"") { value += "\""; i += 1; } else { quoted = !quoted; }
       continue;
     }
-
-    if (char === "," && !quoted) {
-      cells.push(value.trim());
-      value = "";
-      continue;
-    }
-
+    if (char === "," && !quoted) { cells.push(value.trim()); value = ""; continue; }
     value += char;
   }
-
   cells.push(value.trim());
   return cells;
 }
 
 function parsePreferredWindows(csv: string) {
-  return csv
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-    .map((entry) => {
-      const [start, end] = entry.split("-").map((value) => value.trim());
-      return { start, end };
-    })
-    .filter((window) => window.start && window.end);
+  return csv.split(",").map((e) => e.trim()).filter(Boolean)
+    .map((e) => { const [start, end] = e.split("-").map((v) => v.trim()); return { start, end }; })
+    .filter((w) => w.start && w.end);
 }
 
 function serializePreferredWindows(windows: Array<{ start: string; end: string }>) {
-  return windows.map((window) => `${window.start}-${window.end}`).join(", ");
+  return windows.map((w) => `${w.start}-${w.end}`).join(", ");
 }
 
-function normalizeToken(value: string) {
-  return (value || "").trim().toLowerCase();
-}
+function normalizeToken(value: string) { return (value || "").trim().toLowerCase(); }
 
 function mapPreferredDaysToLabels(preferredDays: string[], days: TournamentDay[]) {
   if (!preferredDays?.length || !days?.length) return preferredDays || [];
   return [...new Set(preferredDays.map((token) => {
     const normalized = normalizeToken(token);
-    const matched = days.find((day) => {
-      return normalizeToken(day.id) === normalized || normalizeToken(day.label) === normalized || normalizeToken(day.date) === normalized;
-    });
+    const matched = days.find((day) =>
+      normalizeToken(day.id) === normalized || normalizeToken(day.label) === normalized || normalizeToken(day.date) === normalized
+    );
     return matched ? matched.label : token;
   }))];
 }
@@ -98,9 +76,7 @@ function teamToForm(team: Team, days: TournamentDay[]): TeamFormState {
     name: team.name,
     gender: team.gender,
     preferred_days: mapPreferredDaysToLabels(team.preferred_days || [], days),
-    preferred_windows_csv: serializePreferredWindows(
-      (team.preferred_time_windows || []) as Array<{ start: string; end: string }>
-    ),
+    preferred_windows_csv: serializePreferredWindows((team.preferred_time_windows || []) as Array<{ start: string; end: string }>),
     unavailable_slot_ids: team.unavailable_slot_ids || [],
     prefers_consecutive: team.prefers_consecutive
   };
@@ -127,61 +103,35 @@ function groupSlotsByDay(slots: Slot[]) {
   return grouped;
 }
 
-type SlotPickerProps = {
-  slots: Slot[];
-  selected: string[];
-  onChange: (ids: string[]) => void;
-};
-
-function SlotPicker({ slots, selected, onChange }: SlotPickerProps) {
+function SlotPicker({ slots, selected, onChange }: { slots: Slot[]; selected: string[]; onChange: (ids: string[]) => void }) {
   const byDay = useMemo(() => groupSlotsByDay(slots), [slots]);
+  if (slots.length === 0) return <p className="text-sm italic" style={{ color: "rgba(255,255,255,0.35)" }}>Nessuno slot disponibile. Configura prima i giorni del torneo.</p>;
 
-  if (slots.length === 0) {
-    return <p className="text-sm text-slate-500 italic">Nessuno slot disponibile. Configura prima i giorni del torneo.</p>;
-  }
-
-  const toggleSlot = (id: string) => {
-    onChange(selected.includes(id) ? selected.filter((item) => item !== id) : [...selected, id]);
-  };
-
+  const toggleSlot = (id: string) => onChange(selected.includes(id) ? selected.filter((i) => i !== id) : [...selected, id]);
   const toggleDay = (daySlots: Slot[]) => {
-    const dayIds = daySlots.map((slot) => slot.id);
+    const dayIds = daySlots.map((s) => s.id);
     const allSelected = dayIds.every((id) => selected.includes(id));
-    if (allSelected) {
-      onChange(selected.filter((id) => !dayIds.includes(id)));
-      return;
-    }
-    const next = new Set([...selected, ...dayIds]);
-    onChange([...next]);
+    if (allSelected) { onChange(selected.filter((id) => !dayIds.includes(id))); return; }
+    onChange([...new Set([...selected, ...dayIds])]);
   };
 
   return (
-    <div className="border rounded-lg divide-y max-h-64 overflow-y-auto text-sm">
+    <div className="rounded-xl overflow-hidden max-h-60 overflow-y-auto" style={{ border: "1px solid rgba(255,255,255,0.08)" }}>
       {[...byDay.entries()].map(([dayLabel, daySlots]) => {
-        const dayIds = daySlots.map((slot) => slot.id);
+        const dayIds = daySlots.map((s) => s.id);
         const allSelected = dayIds.every((id) => selected.includes(id));
         const someSelected = !allSelected && dayIds.some((id) => selected.includes(id));
-
         return (
-          <div key={dayLabel} className="p-2">
-            <label className="flex items-center gap-2 font-medium cursor-pointer">
-              <input
-                type="checkbox"
-                checked={allSelected}
-                ref={(element) => {
-                  if (element) element.indeterminate = someSelected;
-                }}
-                onChange={() => toggleDay(daySlots)}
-              />
+          <div key={dayLabel} className="p-3 border-b" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
+            <label className="flex items-center gap-2 text-sm font-semibold cursor-pointer mb-2" style={{ color: "rgba(255,255,255,0.75)" }}>
+              <input type="checkbox" checked={allSelected} ref={(el) => { if (el) el.indeterminate = someSelected; }} onChange={() => toggleDay(daySlots)} className="accent-emerald-400" />
               {dayLabel}
             </label>
-            <div className="ml-6 mt-1 flex flex-wrap gap-2">
+            <div className="ml-5 flex flex-wrap gap-2">
               {daySlots.map((slot) => (
-                <label key={slot.id} className="flex items-center gap-1 cursor-pointer">
-                  <input type="checkbox" checked={selected.includes(slot.id)} onChange={() => toggleSlot(slot.id)} />
-                  <span className="text-slate-700">
-                    {slot.start_time}-{slot.end_time}
-                  </span>
+                <label key={slot.id} className="flex items-center gap-1 text-xs cursor-pointer" style={{ color: "rgba(255,255,255,0.5)" }}>
+                  <input type="checkbox" checked={selected.includes(slot.id)} onChange={() => toggleSlot(slot.id)} className="accent-emerald-400" />
+                  {slot.start_time}-{slot.end_time}
                 </label>
               ))}
             </div>
@@ -192,10 +142,85 @@ function SlotPicker({ slots, selected, onChange }: SlotPickerProps) {
   );
 }
 
+function TeamCard({ team, tournamentsById, onEdit, onDelete }: { team: Team; tournamentsById: Map<string, Tournament>; onEdit: (t: Team) => void; onDelete: (t: Team) => void }) {
+  const isMale = team.gender === "M";
+  const genderColor = isMale ? "#60a5fa" : "#f472b6";
+  const genderBg = isMale ? "rgba(59,130,246,0.12)" : "rgba(236,72,153,0.12)";
+  const initials = team.name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();
+
+  return (
+    <div className="sport-card-interactive p-4 flex flex-col gap-3" onClick={() => onEdit(team)}>
+      <div className="flex items-start justify-between">
+        <div className="flex items-center gap-3">
+          <div
+            className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0"
+            style={{
+              background: genderBg,
+              color: genderColor,
+              border: `1px solid ${genderColor}30`,
+              fontFamily: "Rajdhani, sans-serif",
+            }}
+          >
+            {initials}
+          </div>
+          <div>
+            <div className="font-semibold text-sm">{team.name}</div>
+            <div className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.35)" }}>
+              {tournamentsById.get(team.tournament_id)?.name || "Torneo sconosciuto"}
+            </div>
+          </div>
+        </div>
+        <span
+          className="text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0"
+          style={{ background: genderBg, color: genderColor }}
+        >
+          {team.gender}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <div className="rounded-lg px-2 py-1.5" style={{ background: "rgba(255,255,255,0.04)" }}>
+          <div style={{ color: "rgba(255,255,255,0.35)" }}>Giorni pref.</div>
+          <div className="font-medium mt-0.5 truncate" style={{ color: "rgba(255,255,255,0.7)" }}>
+            {(team.preferred_days || []).join(", ") || "Nessuno"}
+          </div>
+        </div>
+        <div className="rounded-lg px-2 py-1.5" style={{ background: "rgba(255,255,255,0.04)" }}>
+          <div style={{ color: "rgba(255,255,255,0.35)" }}>Indisponibilità</div>
+          <div className="font-medium mt-0.5" style={{ color: (team.unavailable_slot_ids || []).length > 0 ? "#fb923c" : "rgba(255,255,255,0.7)" }}>
+            {(team.unavailable_slot_ids || []).length > 0 ? `${team.unavailable_slot_ids.length} slot` : "Nessuna"}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between pt-1 border-t" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
+        <span className="text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>
+          {team.prefers_consecutive ? "✓ Consecutive" : "Qualsiasi slot"}
+        </span>
+        <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            className="sport-btn-secondary text-xs py-1 px-3"
+            onClick={() => onEdit(team)}
+          >
+            Modifica
+          </button>
+          <button
+            type="button"
+            className="sport-btn-danger text-xs py-1 px-3"
+            onClick={() => void onDelete(team)}
+          >
+            Elimina
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function Teams() {
   const queryClient = useQueryClient();
   const { current, setCurrent } = useTournamentStore();
-
   const [selectedPairKey, setSelectedPairKey] = useState("");
   const [genderFilter, setGenderFilter] = useState<"ALL" | "M" | "F">("ALL");
   const [importGender, setImportGender] = useState<"M" | "F">("M");
@@ -207,609 +232,425 @@ export function Teams() {
   const [csvPreview, setCsvPreview] = useState<CsvPreview | null>(null);
   const [csvLoading, setCsvLoading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+  const [showImport, setShowImport] = useState(false);
 
-  const tournamentsQuery = useQuery({
-    queryKey: ["tournaments"],
-    queryFn: () => tournamentApi.list()
-  });
-
+  const tournamentsQuery = useQuery({ queryKey: ["tournaments"], queryFn: () => tournamentApi.list() });
   const tournaments = (tournamentsQuery.data || []) as Tournament[];
   const pairs = useMemo(() => buildTournamentPairs(tournaments), [tournaments]);
-  const selectedPair = useMemo(() => pairs.find((pair) => pair.key === selectedPairKey) ?? null, [pairs, selectedPairKey]);
+  const selectedPair = useMemo(() => pairs.find((p) => p.key === selectedPairKey) ?? null, [pairs, selectedPairKey]);
 
   useEffect(() => {
-    if (!pairs.length) {
-      if (selectedPairKey) setSelectedPairKey("");
-      return;
-    }
-    if (selectedPairKey && pairs.some((pair) => pair.key === selectedPairKey)) return;
-    const pairFromCurrent = current
-      ? pairs.find((pair) => pair.male?.id === current.id || pair.female?.id === current.id)
-      : null;
+    if (!pairs.length) { if (selectedPairKey) setSelectedPairKey(""); return; }
+    if (selectedPairKey && pairs.some((p) => p.key === selectedPairKey)) return;
+    const pairFromCurrent = current ? pairs.find((p) => p.male?.id === current.id || p.female?.id === current.id) : null;
     setSelectedPairKey((pairFromCurrent || pairs[0]).key);
   }, [current?.id, pairs, selectedPairKey]);
 
   useEffect(() => {
     if (!selectedPair) return;
     const fallback = selectedPair.male || selectedPair.female;
-    if (fallback && current?.id !== fallback.id) {
-      setCurrent(fallback);
-    }
+    if (fallback && current?.id !== fallback.id) setCurrent(fallback);
   }, [current?.id, selectedPair, setCurrent]);
 
   useEffect(() => {
     if (!selectedPair) return;
-    if (importGender === "M" && !selectedPair.male && selectedPair.female) {
-      setImportGender("F");
-    }
-    if (importGender === "F" && !selectedPair.female && selectedPair.male) {
-      setImportGender("M");
-    }
+    if (importGender === "M" && !selectedPair.male && selectedPair.female) setImportGender("F");
+    if (importGender === "F" && !selectedPair.female && selectedPair.male) setImportGender("M");
   }, [importGender, selectedPair]);
 
   const maleTid = selectedPair?.male?.id || "";
   const femaleTid = selectedPair?.female?.id || "";
   const importTid = importGender === "M" ? maleTid : femaleTid;
 
-  const teamsMaleQuery = useQuery({
-    queryKey: ["teams", maleTid],
-    queryFn: () => teamApi.list(maleTid),
-    enabled: Boolean(maleTid)
-  });
-  const teamsFemaleQuery = useQuery({
-    queryKey: ["teams", femaleTid],
-    queryFn: () => teamApi.list(femaleTid),
-    enabled: Boolean(femaleTid)
-  });
+  const teamsMaleQuery = useQuery({ queryKey: ["teams", maleTid], queryFn: () => teamApi.list(maleTid), enabled: Boolean(maleTid) });
+  const teamsFemaleQuery = useQuery({ queryKey: ["teams", femaleTid], queryFn: () => teamApi.list(femaleTid), enabled: Boolean(femaleTid) });
 
   const targetTid = useMemo(() => {
     if (editingTeam?.tournament_id) return editingTeam.tournament_id;
     return getTournamentIdForGender(selectedPair, form.gender) || "";
   }, [editingTeam?.tournament_id, form.gender, selectedPair]);
 
-  const slotsQuery = useQuery({
-    queryKey: ["slots", targetTid],
-    queryFn: () => tournamentApi.getSlots(targetTid),
-    enabled: Boolean(targetTid) && drawerOpen
-  });
-  const daysQuery = useQuery({
-    queryKey: ["days", targetTid],
-    queryFn: () => tournamentApi.getDays(targetTid),
-    enabled: Boolean(targetTid) && drawerOpen
-  });
+  const slotsQuery = useQuery({ queryKey: ["slots", targetTid], queryFn: () => tournamentApi.getSlots(targetTid), enabled: Boolean(targetTid) && drawerOpen });
+  const daysQuery = useQuery({ queryKey: ["days", targetTid], queryFn: () => tournamentApi.getDays(targetTid), enabled: Boolean(targetTid) && drawerOpen });
 
-  const createMutation = useMutation({
-    mutationFn: ({ tid, payload }: { tid: string; payload: unknown }) => teamApi.create(tid, payload),
-    onSuccess: (_, variables) => queryClient.invalidateQueries({ queryKey: ["teams", variables.tid] })
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: ({ tid, id, payload }: { tid: string; id: string; payload: unknown }) => teamApi.update(tid, id, payload),
-    onSuccess: (_, variables) => queryClient.invalidateQueries({ queryKey: ["teams", variables.tid] })
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: ({ tid, id }: { tid: string; id: string }) => teamApi.delete(tid, id),
-    onSuccess: (_, variables) => queryClient.invalidateQueries({ queryKey: ["teams", variables.tid] })
-  });
-
-  const importMutation = useMutation({
-    mutationFn: ({ tid, file }: { tid: string; file: File }) => teamApi.import(tid, file),
-    onSuccess: async (_, variables) => {
-      await queryClient.invalidateQueries({ queryKey: ["teams", variables.tid] });
-    }
-  });
+  const createMutation = useMutation({ mutationFn: ({ tid, payload }: { tid: string; payload: unknown }) => teamApi.create(tid, payload), onSuccess: (_, v) => queryClient.invalidateQueries({ queryKey: ["teams", v.tid] }) });
+  const updateMutation = useMutation({ mutationFn: ({ tid, id, payload }: { tid: string; id: string; payload: unknown }) => teamApi.update(tid, id, payload), onSuccess: (_, v) => queryClient.invalidateQueries({ queryKey: ["teams", v.tid] }) });
+  const deleteMutation = useMutation({ mutationFn: ({ tid, id }: { tid: string; id: string }) => teamApi.delete(tid, id), onSuccess: (_, v) => queryClient.invalidateQueries({ queryKey: ["teams", v.tid] }) });
+  const importMutation = useMutation({ mutationFn: ({ tid, file }: { tid: string; file: File }) => teamApi.import(tid, file), onSuccess: async (_, v) => { await queryClient.invalidateQueries({ queryKey: ["teams", v.tid] }); } });
 
   const teams = useMemo(() => {
-    const all = [ ...((teamsMaleQuery.data || []) as Team[]), ...((teamsFemaleQuery.data || []) as Team[]) ];
+    const all = [...((teamsMaleQuery.data || []) as Team[]), ...((teamsFemaleQuery.data || []) as Team[])];
     return all.sort((a, b) => a.name.localeCompare(b.name, "it"));
   }, [teamsFemaleQuery.data, teamsMaleQuery.data]);
+
   const slots = (slotsQuery.data || []) as Slot[];
   const days = (daysQuery.data || []) as TournamentDay[];
-  const nonFinalDays = days.filter((day) => !day.is_finals_day);
+  const nonFinalDays = days.filter((d) => !d.is_finals_day);
   const teamsLoading = (maleTid ? teamsMaleQuery.isLoading : false) || (femaleTid ? teamsFemaleQuery.isLoading : false);
+  const filteredTeams = useMemo(() => genderFilter === "ALL" ? teams : teams.filter((t) => t.gender === genderFilter), [genderFilter, teams]);
+  const maleCount = teams.filter((t) => t.gender === "M").length;
+  const femaleCount = teams.filter((t) => t.gender === "F").length;
+  const csvTemplateUrl = importTid ? `${String(api.defaults.baseURL ?? "http://localhost:8000")}/api/tournaments/${importTid}/teams/csv-template` : "";
+  const tournamentsById = useMemo(() => new Map(tournaments.map((t) => [t.id, t])), [tournaments]);
 
-  const filteredTeams = useMemo(() => {
-    if (genderFilter === "ALL") return teams;
-    return teams.filter((team) => team.gender === genderFilter);
-  }, [genderFilter, teams]);
-
-  const maleCount = teams.filter((team) => team.gender === "M").length;
-  const femaleCount = teams.filter((team) => team.gender === "F").length;
-
-  const csvTemplateUrl = importTid
-    ? `${String(api.defaults.baseURL ?? "http://localhost:8000")}/api/tournaments/${importTid}/teams/csv-template`
-    : "";
-  const tournamentsById = useMemo(() => new Map(tournaments.map((tournament) => [tournament.id, tournament])), [tournaments]);
-
-  const openCreate = () => {
-    setEditingTeam(null);
-    setForm({ ...EMPTY_FORM, gender: maleTid ? "M" : "F" });
-    setErrorMessage(null);
-    setDrawerOpen(true);
-  };
-
-  const openEdit = (team: Team) => {
-    setEditingTeam(team);
-    setForm(teamToForm(team, []));
-    setErrorMessage(null);
-    setDrawerOpen(true);
-  };
+  const openCreate = () => { setEditingTeam(null); setForm({ ...EMPTY_FORM, gender: maleTid ? "M" : "F" }); setErrorMessage(null); setDrawerOpen(true); };
+  const openEdit = (team: Team) => { setEditingTeam(team); setForm(teamToForm(team, [])); setErrorMessage(null); setDrawerOpen(true); };
 
   useEffect(() => {
     if (!drawerOpen || !days.length) return;
-    setForm((currentForm) => ({
-      ...currentForm,
-      preferred_days: mapPreferredDaysToLabels(currentForm.preferred_days, days)
-    }));
+    setForm((f) => ({ ...f, preferred_days: mapPreferredDaysToLabels(f.preferred_days, days) }));
   }, [days, drawerOpen]);
 
-  const closeDrawer = () => {
-    setDrawerOpen(false);
-    setEditingTeam(null);
-    setForm(EMPTY_FORM);
-  };
+  const closeDrawer = () => { setDrawerOpen(false); setEditingTeam(null); setForm(EMPTY_FORM); };
 
   const submitForm = async () => {
-    if (!form.name.trim()) {
-      setErrorMessage("Inserisci il nome squadra.");
-      return;
-    }
-    if (!targetTid) {
-      setErrorMessage(form.gender === "M" ? "Manca il torneo maschile." : "Manca il torneo femminile.");
-      return;
-    }
-
+    if (!form.name.trim()) { setErrorMessage("Inserisci il nome squadra."); return; }
+    if (!targetTid) { setErrorMessage(form.gender === "M" ? "Manca il torneo maschile." : "Manca il torneo femminile."); return; }
     setErrorMessage(null);
     const payload = formToPayload(form);
     try {
-      if (editingTeam) {
-        await updateMutation.mutateAsync({ tid: targetTid, id: editingTeam.id, payload });
-      } else {
-        await createMutation.mutateAsync({ tid: targetTid, payload });
-      }
+      if (editingTeam) { await updateMutation.mutateAsync({ tid: targetTid, id: editingTeam.id, payload }); }
+      else { await createMutation.mutateAsync({ tid: targetTid, payload }); }
       closeDrawer();
-    } catch (error: unknown) {
-      setErrorMessage(error instanceof Error ? error.message : "Errore durante il salvataggio.");
-    }
+    } catch (error: unknown) { setErrorMessage(error instanceof Error ? error.message : "Errore durante il salvataggio."); }
   };
 
   const onDeleteTeam = async (team: Team) => {
     if (!confirm("Eliminare questa squadra?")) return;
     setErrorMessage(null);
-    try {
-      await deleteMutation.mutateAsync({ tid: team.tournament_id, id: team.id });
-    } catch (error: unknown) {
-      setErrorMessage(error instanceof Error ? error.message : "Errore durante eliminazione squadra.");
-    }
+    try { await deleteMutation.mutateAsync({ tid: team.tournament_id, id: team.id }); }
+    catch (error: unknown) { setErrorMessage(error instanceof Error ? error.message : "Errore durante eliminazione squadra."); }
   };
 
-  const clearImportState = () => {
-    setCsvFile(null);
-    setCsvPreview(null);
-    setCsvLoading(false);
-  };
+  const clearImportState = () => { setCsvFile(null); setCsvPreview(null); setCsvLoading(false); };
 
   const onSelectCsv = async (file: File | null) => {
     if (!file) return;
-    if (!file.name.toLowerCase().endsWith(".csv")) {
-      setErrorMessage("Seleziona un file .csv.");
-      return;
-    }
-
-    setCsvFile(file);
-    setCsvLoading(true);
-    setErrorMessage(null);
-
+    if (!file.name.toLowerCase().endsWith(".csv")) { setErrorMessage("Seleziona un file .csv."); return; }
+    setCsvFile(file); setCsvLoading(true); setErrorMessage(null);
     try {
       const text = await file.text();
-      const lines = text
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter(Boolean);
-
-      if (lines.length === 0) {
-        setCsvPreview({ headers: [], rows: [] });
-        return;
-      }
-
+      const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      if (lines.length === 0) { setCsvPreview({ headers: [], rows: [] }); return; }
       const headers = splitCsvLine(lines[0]);
-      const rows = lines.slice(1).map((line) => splitCsvLine(line));
+      const rows = lines.slice(1).map((l) => splitCsvLine(l));
       setCsvPreview({ headers, rows });
-    } catch (error: unknown) {
-      setErrorMessage(error instanceof Error ? error.message : "Errore lettura file CSV.");
-      clearImportState();
-    } finally {
-      setCsvLoading(false);
-    }
+    } catch (error: unknown) { setErrorMessage(error instanceof Error ? error.message : "Errore lettura file CSV."); clearImportState(); }
+    finally { setCsvLoading(false); }
   };
 
   const confirmImportCsv = async () => {
-    if (!csvFile) {
-      setErrorMessage("Seleziona un file CSV da importare.");
-      return;
-    }
-    if (!importTid) {
-      setErrorMessage(importGender === "M" ? "Manca il torneo maschile." : "Manca il torneo femminile.");
-      return;
-    }
-
+    if (!csvFile) { setErrorMessage("Seleziona un file CSV da importare."); return; }
+    if (!importTid) { setErrorMessage(importGender === "M" ? "Manca il torneo maschile." : "Manca il torneo femminile."); return; }
     setErrorMessage(null);
-    try {
-      await importMutation.mutateAsync({ tid: importTid, file: csvFile });
-      clearImportState();
-    } catch (error: unknown) {
-      setErrorMessage(error instanceof Error ? error.message : "Errore import CSV.");
-    }
+    try { await importMutation.mutateAsync({ tid: importTid, file: csvFile }); clearImportState(); }
+    catch (error: unknown) { setErrorMessage(error instanceof Error ? error.message : "Errore import CSV."); }
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6 pb-20 md:pb-0">
+      {/* Header */}
       <header>
-        <h1 className="text-2xl font-bold">Squadre</h1>
-        <p className="text-slate-600 text-sm">Gestione centralizzata squadre M/F con instradamento automatico per genere.</p>
+        <div className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ color: "#00e676" }}>Gestione</div>
+        <h1 style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "clamp(28px, 4vw, 40px)", fontWeight: 800 }}>
+          Squadre
+        </h1>
+        <p className="text-sm mt-0.5" style={{ color: "rgba(255,255,255,0.4)" }}>
+          Aggiungi le squadre maschili e femminili — vengono assegnate automaticamente alla sezione corretta.
+        </p>
       </header>
 
-      {errorMessage ? <div className="rounded-lg border border-red-300 bg-red-100 px-3 py-2 text-red-700 text-sm">{errorMessage}</div> : null}
+      {errorMessage && <div className="sport-alert-error">{errorMessage}</div>}
 
-      <section className="rounded-xl border bg-white p-4 shadow-sm space-y-4">
+      {/* Controls */}
+      <div className="sport-card p-5 space-y-4">
         <div className="flex flex-wrap gap-3 items-end">
-          <label className="flex flex-col gap-1">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Coppia tornei M/F</span>
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "rgba(255,255,255,0.35)" }}>Edizione</span>
             <select
-              className="rounded-lg border px-3 py-2 min-w-64"
+              className="sport-select min-w-52"
               value={selectedPairKey}
-              onChange={(event) => {
-                setSelectedPairKey(event.target.value);
-                setErrorMessage(null);
-              }}
+              onChange={(e) => { setSelectedPairKey(e.target.value); setErrorMessage(null); }}
             >
-              {pairs.map((pair) => (
-                <option value={pair.key} key={pair.key}>
-                  {pair.label}
-                </option>
-              ))}
+              {pairs.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
             </select>
-          </label>
+          </div>
 
-          <button className="rounded-lg bg-slate-900 text-white px-4 py-2" type="button" onClick={openCreate} disabled={!selectedPair}>
-            + Aggiungi squadra
+          <button className="sport-btn-primary" type="button" onClick={openCreate} disabled={!selectedPair}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Aggiungi squadra
           </button>
 
-          <label className="rounded-lg border px-4 py-2 cursor-pointer bg-slate-50 hover:bg-slate-100">
-            <input
-              type="file"
-              accept=".csv,text/csv"
-              className="hidden"
-              onChange={(event) => void onSelectCsv(event.target.files?.[0] || null)}
-              disabled={!importTid || importMutation.isPending}
-            />
-            Importa CSV
-          </label>
+          <button
+            className="sport-btn-secondary"
+            type="button"
+            onClick={() => setShowImport(!showImport)}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Import CSV
+          </button>
 
-          <label className="flex flex-col gap-1">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Import target</span>
-            <select
-              className="rounded-lg border px-3 py-2"
-              value={importGender}
-              onChange={(event) => setImportGender(event.target.value as "M" | "F")}
-            >
-              <option value="M">Maschile (M)</option>
-              <option value="F">Femminile (F)</option>
-            </select>
-          </label>
-
-          <label className="flex flex-col gap-1">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Filtra</span>
-            <select
-              className="rounded-lg border px-3 py-2"
-              value={genderFilter}
-              onChange={(event) => setGenderFilter(event.target.value as "ALL" | "M" | "F")}
-            >
-              <option value="ALL">Tutti ({maleCount + femaleCount})</option>
-              <option value="M">Maschile ({maleCount})</option>
-              <option value="F">Femminile ({femaleCount})</option>
-            </select>
-          </label>
-
-          {csvTemplateUrl ? (
-            <a className="rounded-lg border px-4 py-2 bg-slate-50 hover:bg-slate-100" href={csvTemplateUrl} target="_blank" rel="noreferrer">
+          {csvTemplateUrl && (
+            <a className="sport-btn-secondary" href={csvTemplateUrl} target="_blank" rel="noreferrer">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
               Template CSV
             </a>
-          ) : null}
+          )}
         </div>
 
-        {selectedPair ? (
-          <div className="text-xs text-slate-500">
-            Torneo M: {selectedPair.male?.name || "non configurato"} | Torneo F: {selectedPair.female?.name || "non configurato"}
-          </div>
-        ) : (
-          <div className="text-xs text-amber-700">Nessuna coppia M/F disponibile. Crea prima i tornei in Configurazione.</div>
-        )}
+        {/* Stats bar */}
+        <div className="flex items-center gap-3 flex-wrap">
+          {[
+            { label: "Tutti", value: "ALL", count: maleCount + femaleCount, max: null as number | null | undefined, color: "rgba(255,255,255,0.6)" },
+            { label: "Maschile", value: "M", count: maleCount, max: selectedPair?.male?.max_teams, color: "#60a5fa" },
+            { label: "Femminile", value: "F", count: femaleCount, max: selectedPair?.female?.max_teams, color: "#f472b6" },
+          ].map(({ label, value, count, max, color }) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setGenderFilter(value as "ALL" | "M" | "F")}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold transition-all duration-200"
+              style={
+                genderFilter === value
+                  ? { background: `${color}18`, color, border: `1px solid ${color}40` }
+                  : { background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.4)", border: "1px solid rgba(255,255,255,0.07)" }
+              }
+            >
+              <span>{label}</span>
+              <span
+                className="text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[22px] text-center"
+                style={genderFilter === value ? { background: `${color}25` } : { background: "rgba(255,255,255,0.08)" }}
+              >
+                {max ? `${count}/${max}` : count}
+              </span>
+            </button>
+          ))}
 
-        <div
-          className={`rounded-xl border-2 border-dashed p-4 text-sm transition-colors ${
-            dragActive ? "border-slate-900 bg-slate-100" : "border-slate-300 bg-slate-50"
-          }`}
-          onDragOver={(event) => {
-            event.preventDefault();
-            setDragActive(true);
-          }}
-          onDragLeave={() => setDragActive(false)}
-          onDrop={(event) => {
-            event.preventDefault();
-            setDragActive(false);
-            void onSelectCsv(event.dataTransfer.files?.[0] || null);
-          }}
-        >
-          Trascina qui un file CSV oppure usa il pulsante import.
+          {selectedPair && (
+            <div className="ml-auto flex items-center gap-2 flex-wrap">
+              {([
+                { gender: "M", t: selectedPair.male, count: maleCount, color: "#60a5fa", bg: "rgba(59,130,246,0.12)", border: "rgba(59,130,246,0.25)", label: "Maschile" },
+                { gender: "F", t: selectedPair.female, count: femaleCount, color: "#f472b6", bg: "rgba(236,72,153,0.12)", border: "rgba(236,72,153,0.25)", label: "Femminile" },
+              ] as const).map(({ gender, t, count, color, bg, border, label }) => {
+                const max = t?.max_teams;
+                const configured = Boolean(t);
+                return (
+                  <div key={gender} className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold"
+                    style={{ background: configured ? bg : "rgba(255,255,255,0.04)", border: `1px solid ${configured ? border : "rgba(255,255,255,0.08)"}`, color: configured ? color : "rgba(255,255,255,0.3)" }}>
+                    <span>{gender === "M" ? "♂" : "♀"} {label}</span>
+                    <span className="font-bold px-1.5 py-0.5 rounded-full" style={{ background: configured ? `${color}25` : "rgba(255,255,255,0.07)", minWidth: 28, textAlign: "center" }}>
+                      {configured ? (max ? `${count}/${max}` : String(count)) : "—"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
-        {csvFile || csvPreview ? (
-          <div className="rounded-lg border p-3 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="text-sm">
-                <div className="font-medium">Anteprima import CSV</div>
-                <div className="text-slate-500">
-                  File: <strong>{csvFile?.name ?? "-"}</strong>
-                  {csvPreview ? ` - righe: ${csvPreview.rows.length}` : ""}
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  className="rounded-lg border px-3 py-2 text-sm"
-                  onClick={() => clearImportState()}
-                  disabled={importMutation.isPending || csvLoading}
-                >
-                  Annulla
-                </button>
-                <button
-                  type="button"
-                  className="rounded-lg bg-slate-900 text-white px-3 py-2 text-sm disabled:opacity-50"
-                  onClick={() => void confirmImportCsv()}
-                  disabled={!csvFile || importMutation.isPending || csvLoading}
-                >
-                  {importMutation.isPending ? "Import in corso..." : "Conferma import"}
-                </button>
+        {/* Import panel */}
+        {showImport && (
+          <div className="rounded-xl p-4 space-y-3" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <div className="flex items-center gap-3">
+              <div className="flex flex-col gap-1">
+                <span className="text-xs uppercase tracking-wider font-semibold" style={{ color: "rgba(255,255,255,0.35)" }}>Import target</span>
+                <select className="sport-select" value={importGender} onChange={(e) => setImportGender(e.target.value as "M" | "F")}>
+                  <option value="M">Maschile (M)</option>
+                  <option value="F">Femminile (F)</option>
+                </select>
               </div>
             </div>
+            <div
+              className={`rounded-xl border-2 border-dashed p-6 text-sm text-center transition-colors cursor-pointer ${dragActive ? "border-emerald-400" : ""}`}
+              style={{ borderColor: dragActive ? "#00e676" : "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.4)" }}
+              onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
+              onDragLeave={() => setDragActive(false)}
+              onDrop={(e) => { e.preventDefault(); setDragActive(false); void onSelectCsv(e.dataTransfer.files?.[0] || null); }}
+            >
+              <div className="mb-2 text-2xl">📄</div>
+              Trascina un file CSV o{" "}
+              <label className="cursor-pointer font-semibold underline" style={{ color: "#00e676" }}>
+                sfoglia
+                <input type="file" accept=".csv,text/csv" className="hidden" onChange={(e) => void onSelectCsv(e.target.files?.[0] || null)} disabled={!importTid || importMutation.isPending} />
+              </label>
+            </div>
 
-            {csvLoading ? (
-              <div className="text-sm text-slate-500">Lettura file in corso...</div>
-            ) : csvPreview?.headers.length ? (
-              <div className="overflow-x-auto rounded-lg border">
-                <table className="min-w-full text-xs">
-                  <thead className="bg-slate-100">
-                    <tr>
-                      {csvPreview.headers.map((header, index) => (
-                        <th key={`${header}-${index}`} className="text-left px-2 py-1">
-                          {header}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {csvPreview.rows.slice(0, 8).map((row, rowIndex) => (
-                      <tr key={`preview-${rowIndex}`} className="border-t">
-                        {row.map((cell, cellIndex) => (
-                          <td key={`${rowIndex}-${cellIndex}`} className="px-2 py-1">
-                            {cell || "-"}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {csvPreview.rows.length > 8 ? (
-                  <div className="px-2 py-1 text-xs text-slate-500 border-t">Anteprima limitata a 8 righe.</div>
-                ) : null}
+            {(csvFile || csvPreview) && (
+              <div className="rounded-xl p-3 space-y-3" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)" }}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm">
+                    <div className="font-semibold">{csvFile?.name ?? "—"}</div>
+                    {csvPreview && <div style={{ color: "rgba(255,255,255,0.4)" }}>{csvPreview.rows.length} righe</div>}
+                  </div>
+                  <div className="flex gap-2">
+                    <button type="button" className="sport-btn-secondary text-xs" onClick={clearImportState} disabled={importMutation.isPending || csvLoading}>Annulla</button>
+                    <button type="button" className="sport-btn-primary text-xs" onClick={() => void confirmImportCsv()} disabled={!csvFile || importMutation.isPending || csvLoading}>
+                      {importMutation.isPending ? "Import..." : "Conferma import"}
+                    </button>
+                  </div>
+                </div>
+                {!csvLoading && csvPreview?.headers.length ? (
+                  <div className="overflow-x-auto rounded-lg" style={{ border: "1px solid rgba(255,255,255,0.07)" }}>
+                    <table className="min-w-full text-xs">
+                      <thead><tr>{csvPreview.headers.map((h, i) => <th key={i} className="px-2 py-1.5 text-left font-semibold" style={{ color: "rgba(255,255,255,0.4)", background: "rgba(255,255,255,0.04)" }}>{h}</th>)}</tr></thead>
+                      <tbody>{csvPreview.rows.slice(0, 8).map((row, ri) => <tr key={ri} style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>{row.map((cell, ci) => <td key={ci} className="px-2 py-1" style={{ color: "rgba(255,255,255,0.6)" }}>{cell || "—"}</td>)}</tr>)}</tbody>
+                    </table>
+                    {csvPreview.rows.length > 8 && <div className="px-2 py-1 text-xs" style={{ color: "rgba(255,255,255,0.3)" }}>Anteprima limitata a 8 righe.</div>}
+                  </div>
+                ) : csvLoading ? <div className="text-sm" style={{ color: "rgba(255,255,255,0.4)" }}>Lettura file...</div> : null}
               </div>
-            ) : (
-              <div className="text-sm text-slate-500">Nessuna riga da mostrare in anteprima.</div>
             )}
           </div>
-        ) : null}
-      </section>
+        )}
+      </div>
 
-      <section className="rounded-xl border bg-white shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead className="bg-slate-100">
-              <tr>
-                <th className="text-left px-3 py-2">#</th>
-                <th className="text-left px-3 py-2">Nome</th>
-                <th className="text-left px-3 py-2">Genere</th>
-                <th className="text-left px-3 py-2">Torneo</th>
-                <th className="text-left px-3 py-2">Preferenze</th>
-                <th className="text-left px-3 py-2">Indisponibilita</th>
-                <th className="text-left px-3 py-2">Azioni</th>
-              </tr>
-            </thead>
-            <tbody>
-              {teamsLoading ? (
-                <tr>
-                  <td className="px-3 py-4" colSpan={7}>
-                    Caricamento squadre...
-                  </td>
-                </tr>
-              ) : filteredTeams.length === 0 ? (
-                <tr>
-                  <td className="px-3 py-4" colSpan={7}>
-                    Nessuna squadra disponibile.
-                  </td>
-                </tr>
-              ) : (
-                filteredTeams.map((team, index) => (
-                  <tr key={team.id} className="border-t hover:bg-slate-50 cursor-pointer" onClick={() => openEdit(team)}>
-                    <td className="px-3 py-2">{index + 1}</td>
-                    <td className="px-3 py-2 font-medium">{team.name}</td>
-                    <td className="px-3 py-2">
-                      <span className={`px-2 py-0.5 rounded text-xs ${team.gender === "M" ? "bg-blue-100 text-blue-700" : "bg-pink-100 text-pink-700"}`}>
-                        {team.gender}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-slate-600">{tournamentsById.get(team.tournament_id)?.name || "Torneo sconosciuto"}</td>
-                    <td className="px-3 py-2 text-slate-600">
-                      {(team.preferred_days || []).join(", ") || "Nessuna"}
-                      <div className="text-xs text-slate-500">
-                        {(team.preferred_time_windows || []).map((window) => `${window.start}-${window.end}`).join(", ") || "Nessuna fascia"}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 text-slate-600">
-                      {(team.unavailable_slot_ids || []).length > 0 ? `${team.unavailable_slot_ids.length} slot` : "Nessuna"}
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex gap-2" onClick={(event) => event.stopPropagation()}>
-                        <button type="button" className="rounded border px-2 py-1 text-xs" onClick={() => openEdit(team)}>
-                          Modifica
-                        </button>
-                        <button
-                          type="button"
-                          className="rounded border px-2 py-1 text-xs text-red-700"
-                          onClick={() => void onDeleteTeam(team)}
-                          disabled={deleteMutation.isPending}
-                        >
-                          Elimina
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+      {/* Teams grid */}
+      {teamsLoading ? (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {[1, 2, 3, 4].map((i) => <div key={i} className="sport-skeleton h-36" />)}
         </div>
-      </section>
+      ) : filteredTeams.length === 0 ? (
+        <div className="sport-card p-8 text-center" style={{ color: "rgba(255,255,255,0.35)" }}>
+          <div className="text-3xl mb-3">👥</div>
+          <div className="font-semibold">Nessuna squadra disponibile</div>
+          <div className="text-sm mt-1">Aggiungi squadre con il pulsante in alto.</div>
+        </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {filteredTeams.map((team) => (
+            <TeamCard
+              key={team.id}
+              team={team}
+              tournamentsById={tournamentsById}
+              onEdit={openEdit}
+              onDelete={onDeleteTeam}
+            />
+          ))}
+        </div>
+      )}
 
-      {drawerOpen ? (
-        <div className="fixed inset-0 z-50 bg-black/30 flex justify-end">
-          <div className="w-full max-w-xl bg-white h-full p-5 overflow-y-auto space-y-4 shadow-xl">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold">{editingTeam ? "Modifica Squadra" : "Nuova Squadra"}</h2>
-              <button type="button" className="rounded border px-3 py-1 hover:bg-slate-50" onClick={closeDrawer}>
-                X Chiudi
+      {/* Drawer */}
+      {drawerOpen && (
+        <div className="fixed inset-0 z-50 flex justify-end" style={{ background: "rgba(0,0,0,0.65)", backdropFilter: "blur(4px)" }}>
+          <div
+            className="w-full max-w-lg h-full overflow-y-auto flex flex-col"
+            style={{ background: "#0d1224", borderLeft: "1px solid rgba(255,255,255,0.08)" }}
+          >
+            {/* Drawer header */}
+            <div className="flex items-center justify-between px-6 py-5" style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+              <h2 style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "22px", fontWeight: 700 }}>
+                {editingTeam ? "Modifica Squadra" : "Nuova Squadra"}
+              </h2>
+              <button
+                type="button"
+                className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
+                style={{ background: "rgba(255,255,255,0.07)", color: "rgba(255,255,255,0.6)" }}
+                onClick={closeDrawer}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>
             </div>
 
-            <label className="flex flex-col gap-1">
-              <span className="text-sm font-medium">Nome squadra *</span>
-              <input
-                className="rounded-lg border px-3 py-2"
-                value={form.name}
-                placeholder="Es. Team Alpha"
-                onChange={(event) => setForm((currentForm) => ({ ...currentForm, name: event.target.value }))}
-              />
-            </label>
+            {/* Drawer body */}
+            <div className="flex-1 p-6 space-y-5">
+              {errorMessage && <div className="sport-alert-error">{errorMessage}</div>}
 
-            <div className="flex flex-col gap-1">
-              <span className="text-sm font-medium">Genere</span>
-              <select
-                className="rounded-lg border px-3 py-2"
-                value={form.gender}
-                disabled={Boolean(editingTeam)}
-                onChange={(event) => setForm((currentForm) => ({ ...currentForm, gender: event.target.value as "M" | "F" }))}
-              >
-                <option value="M">Maschile (M)</option>
-                <option value="F">Femminile (F)</option>
-              </select>
-              {editingTeam ? <span className="text-xs text-slate-500">Il genere non e modificabile in modifica.</span> : null}
-              {!targetTid ? (
-                <span className="text-xs text-red-600">
-                  Nessun torneo disponibile per il genere {form.gender}. Configura prima la coppia M/F.
-                </span>
-              ) : (
-                <span className="text-xs text-slate-500">
-                  Salvataggio su: {tournamentsById.get(targetTid)?.name || targetTid}
-                </span>
-              )}
-            </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-semibold" style={{ color: "rgba(255,255,255,0.7)" }}>Nome squadra *</label>
+                <input className="sport-input" value={form.name} placeholder="Es. Team Alpha" onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+              </div>
 
-            <div className="space-y-1">
-              <span className="text-sm font-medium">Giorni preferiti (escluse finali)</span>
-              {daysQuery.isLoading ? (
-                <p className="text-sm text-slate-500">Caricamento giorni...</p>
-              ) : nonFinalDays.length === 0 ? (
-                <p className="text-xs text-slate-500">Nessun giorno selezionabile: i giorni finali non sono ammessi nelle preferenze.</p>
-              ) : (
-                <div className="rounded-lg border p-2 flex flex-wrap gap-2">
-                  {nonFinalDays.map((day) => (
-                    <label key={day.id} className="inline-flex items-center gap-2 rounded border px-2 py-1 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={form.preferred_days.includes(day.label)}
-                        onChange={(event) =>
-                          setForm((currentForm) => ({
-                            ...currentForm,
-                            preferred_days: event.target.checked
-                              ? [...new Set([...currentForm.preferred_days, day.label])]
-                              : currentForm.preferred_days.filter((value) => value !== day.label)
-                          }))
-                        }
-                      />
-                      {day.label}
-                    </label>
-                  ))}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-semibold" style={{ color: "rgba(255,255,255,0.7)" }}>Genere</label>
+                <select className="sport-select" value={form.gender} disabled={Boolean(editingTeam)} onChange={(e) => setForm((f) => ({ ...f, gender: e.target.value as "M" | "F" }))}>
+                  <option value="M">Maschile (M)</option>
+                  <option value="F">Femminile (F)</option>
+                </select>
+                {editingTeam && <span className="text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>Il genere non è modificabile in modifica.</span>}
+                {!targetTid && <span className="text-xs" style={{ color: "#fb923c" }}>Nessun torneo disponibile per il genere {form.gender}.</span>}
+                {targetTid && <span className="text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>Torneo: {tournamentsById.get(targetTid)?.name || targetTid}</span>}
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-semibold" style={{ color: "rgba(255,255,255,0.7)" }}>Giorni preferiti</label>
+                {daysQuery.isLoading ? (
+                  <p className="text-sm" style={{ color: "rgba(255,255,255,0.4)" }}>Caricamento giorni...</p>
+                ) : nonFinalDays.length === 0 ? (
+                  <p className="text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>Nessun giorno non-finale disponibile.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {nonFinalDays.map((day) => {
+                      const checked = form.preferred_days.includes(day.label);
+                      return (
+                        <label
+                          key={day.id}
+                          className="flex items-center gap-2 text-sm cursor-pointer px-3 py-2 rounded-xl transition-all duration-200"
+                          style={checked ? { background: "rgba(0,230,118,0.12)", border: "1px solid rgba(0,230,118,0.3)", color: "#00e676" } : { background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.6)" }}
+                        >
+                          <input type="checkbox" className="hidden" checked={checked} onChange={(e) => setForm((f) => ({ ...f, preferred_days: e.target.checked ? [...new Set([...f.preferred_days, day.label])] : f.preferred_days.filter((v) => v !== day.label) }))} />
+                          {day.label}
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+                <span className="text-xs" style={{ color: "rgba(255,255,255,0.3)" }}>Soft constraint. I giorni finali sono esclusi.</span>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-semibold" style={{ color: "rgba(255,255,255,0.7)" }}>Fasce orarie preferite</label>
+                <input className="sport-input" placeholder="Es: 10:00-13:00, 15:00-18:00" value={form.preferred_windows_csv} onChange={(e) => setForm((f) => ({ ...f, preferred_windows_csv: e.target.value }))} />
+                <span className="text-xs" style={{ color: "rgba(255,255,255,0.3)" }}>Soft constraint. Formato: HH:MM-HH:MM separati da virgola.</span>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-semibold" style={{ color: "rgba(255,255,255,0.7)" }}>Slot indisponibili</label>
+                  {form.unavailable_slot_ids.length > 0 && (
+                    <span className="sport-badge-orange text-xs">{form.unavailable_slot_ids.length} slot</span>
+                  )}
                 </div>
-              )}
-              <span className="text-xs text-slate-500">Soft constraint. I giorni finali sono sempre esclusi.</span>
+                <p className="text-xs" style={{ color: "rgba(255,255,255,0.3)" }}>Hard constraint: la squadra non potrà mai essere schedulata in questi slot.</p>
+                {slotsQuery.isLoading ? (
+                  <p className="text-sm" style={{ color: "rgba(255,255,255,0.4)" }}>Caricamento slot...</p>
+                ) : (
+                  <SlotPicker slots={slots} selected={form.unavailable_slot_ids} onChange={(ids) => setForm((f) => ({ ...f, unavailable_slot_ids: ids }))} />
+                )}
+              </div>
+
+              <label
+                className="flex items-center gap-3 cursor-pointer p-3 rounded-xl transition-all duration-200"
+                style={{ background: form.prefers_consecutive ? "rgba(0,230,118,0.08)" : "rgba(255,255,255,0.04)", border: `1px solid ${form.prefers_consecutive ? "rgba(0,230,118,0.25)" : "rgba(255,255,255,0.07)"}` }}
+              >
+                <div
+                  className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 transition-all duration-200"
+                  style={{ background: form.prefers_consecutive ? "#00e676" : "rgba(255,255,255,0.1)", border: form.prefers_consecutive ? "none" : "1px solid rgba(255,255,255,0.2)" }}
+                >
+                  {form.prefers_consecutive && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#080c18" strokeWidth={3}><polyline points="20 6 9 17 4 12"/></svg>}
+                </div>
+                <input type="checkbox" className="hidden" checked={form.prefers_consecutive} onChange={(e) => setForm((f) => ({ ...f, prefers_consecutive: e.target.checked }))} />
+                <div>
+                  <div className="text-sm font-semibold" style={{ color: form.prefers_consecutive ? "#00e676" : "rgba(255,255,255,0.7)" }}>Preferisce partite consecutive</div>
+                  <div className="text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>Soft constraint</div>
+                </div>
+              </label>
             </div>
 
-            <label className="flex flex-col gap-1">
-              <span className="text-sm font-medium">Fasce orarie preferite</span>
-              <input
-                className="rounded-lg border px-3 py-2"
-                placeholder="Es: 10:00-13:00, 15:00-18:00"
-                value={form.preferred_windows_csv}
-                onChange={(event) => setForm((currentForm) => ({ ...currentForm, preferred_windows_csv: event.target.value }))}
-              />
-              <span className="text-xs text-slate-500">Soft constraint.</span>
-            </label>
-
-            <div className="space-y-1">
-              <span className="text-sm font-medium">
-                Slot indisponibili{" "}
-                {form.unavailable_slot_ids.length > 0 ? (
-                  <span className="rounded bg-red-100 text-red-700 text-xs px-1.5 py-0.5">{form.unavailable_slot_ids.length}</span>
-                ) : null}
-              </span>
-              <p className="text-xs text-slate-500">Hard constraint: la squadra non potra mai essere schedulata in questi slot.</p>
-              {slotsQuery.isLoading ? (
-                <p className="text-sm text-slate-500">Caricamento slot...</p>
-              ) : (
-                <SlotPicker
-                  slots={slots}
-                  selected={form.unavailable_slot_ids}
-                  onChange={(ids) => setForm((currentForm) => ({ ...currentForm, unavailable_slot_ids: ids }))}
-                />
-              )}
-            </div>
-
-            <label className="inline-flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={form.prefers_consecutive}
-                onChange={(event) => setForm((currentForm) => ({ ...currentForm, prefers_consecutive: event.target.checked }))}
-              />
-              <span className="text-sm">Preferisce partite consecutive (soft)</span>
-            </label>
-
-            <div className="border-t pt-3 flex gap-2">
+            {/* Drawer footer */}
+            <div className="px-6 py-5 flex gap-3" style={{ borderTop: "1px solid rgba(255,255,255,0.07)" }}>
               <button
                 type="button"
-                className="flex-1 rounded-lg bg-slate-900 text-white px-4 py-2 disabled:opacity-50"
+                className="sport-btn-primary flex-1"
                 onClick={() => void submitForm()}
                 disabled={createMutation.isPending || updateMutation.isPending || !targetTid}
               >
                 {editingTeam ? "Salva modifiche" : "Crea squadra"}
               </button>
-              <button type="button" className="rounded-lg border px-4 py-2" onClick={closeDrawer}>
-                Annulla
-              </button>
+              <button type="button" className="sport-btn-secondary px-4" onClick={closeDrawer}>Annulla</button>
             </div>
           </div>
         </div>
-      ) : null}
+      )}
     </div>
   );
 }

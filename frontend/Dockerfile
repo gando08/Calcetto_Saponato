@@ -3,6 +3,8 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
+# CACHEBUST invalida solo questo layer in avanti, preservando npm install
+ARG CACHEBUST=1
 COPY . .
 RUN npm run build
 

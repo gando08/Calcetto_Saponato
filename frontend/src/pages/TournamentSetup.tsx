@@ -36,7 +36,6 @@ const DEFAULT_TIEBREAKERS = [
   "goal_diff",
   "goals_for",
   "goals_against",
-  "fair_play",
   "draw"
 ];
 
@@ -45,7 +44,6 @@ const TIEBREAKER_LABELS: Record<string, string> = {
   goal_diff: "Differenza Reti",
   goals_for: "Gol Fatti",
   goals_against: "Gol Subiti",
-  fair_play: "Fair Play",
   draw: "Sorteggio"
 };
 
@@ -146,13 +144,18 @@ function SortableTiebreakerItem({ id }: { id: string }) {
       ref={setNodeRef}
       style={{
         transform: CSS.Transform.toString(transform),
-        transition
+        transition,
+        background: isDragging ? "rgba(0,230,118,0.1)" : "rgba(255,255,255,0.04)",
+        border: isDragging ? "1px solid rgba(0,230,118,0.3)" : "1px solid rgba(255,255,255,0.08)",
+        color: isDragging ? "#00e676" : "rgba(255,255,255,0.75)"
       }}
       {...attributes}
       {...listeners}
-      className={`rounded-lg border px-3 py-2 text-sm bg-white cursor-grab ${isDragging ? "shadow-md opacity-70" : ""}`}
+      className={`rounded-lg px-3 py-2.5 text-sm font-medium cursor-grab transition-all duration-150 flex items-center gap-2 ${isDragging ? "shadow-lg opacity-70" : ""}`}
     >
-      <span className="text-xs text-slate-500 mr-2">drag</span>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} style={{ opacity: 0.4, flexShrink: 0 }}>
+        <path d="M8 6h.01M8 12h.01M8 18h.01M16 6h.01M16 12h.01M16 18h.01" strokeLinecap="round" />
+      </svg>
       {TIEBREAKER_LABELS[id] ?? id}
     </div>
   );
@@ -639,19 +642,32 @@ export function TournamentSetup() {
     }
   };
 
+  const cardStyle = { background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" };
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
+      {/* Page header */}
       <header>
-        <h1 className="text-2xl font-bold">Configurazione Torneo</h1>
-        <p className="text-sm text-slate-600">Puoi creare un nuovo torneo o modificare quello esistente.</p>
+        <h1
+          className="text-3xl font-extrabold tracking-tight"
+          style={{ fontFamily: "Rajdhani, sans-serif", color: "rgba(255,255,255,0.95)" }}
+        >
+          Configurazione Torneo
+        </h1>
+        <p className="text-sm mt-1" style={{ color: "rgba(255,255,255,0.4)" }}>
+          Crea un nuovo torneo o modifica quello esistente.
+        </p>
       </header>
 
-      <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+      {/* Tournament selector + mode */}
+      <section className="rounded-xl p-4 space-y-4" style={cardStyle}>
         <div className="flex flex-wrap gap-3 items-end">
-          <label className="flex flex-col gap-1">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Torneo attivo</span>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: "rgba(255,255,255,0.35)" }}>
+              Torneo attivo
+            </span>
             <select
-              className="rounded-lg border px-3 py-2 min-w-64"
+              className="sport-select min-w-56"
               value={current?.id || ""}
               onChange={(event) => {
                 const selected = ((tournamentsQuery.data || []) as Tournament[]).find((tournament) => tournament.id === event.target.value);
@@ -669,37 +685,39 @@ export function TournamentSetup() {
             </select>
           </label>
 
-          <div className="inline-flex rounded-lg border overflow-hidden">
-            <button
-              type="button"
-              className={`px-4 py-2 text-sm ${mode === "create" ? "bg-slate-900 text-white" : "bg-white text-slate-700"}`}
-              onClick={() => {
-                setMode("create");
-                setError(null);
-                setSuccess(null);
-                resetCreateForm();
-              }}
-            >
-              Nuovo torneo
-            </button>
-            <button
-              type="button"
-              className={`px-4 py-2 text-sm ${mode === "edit" ? "bg-slate-900 text-white" : "bg-white text-slate-700"}`}
-              onClick={() => {
-                setMode("edit");
-                setError(null);
-                setSuccess(null);
-                setLoadedTournamentId("");
-              }}
-              disabled={!current?.id}
-            >
-              Modifica torneo
-            </button>
+          {/* Mode toggle */}
+          <div
+            className="inline-flex rounded-xl overflow-hidden"
+            style={{ border: "1px solid rgba(255,255,255,0.08)" }}
+          >
+            {(["create", "edit"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                className="px-4 py-2 text-sm font-semibold transition-all duration-200"
+                style={{
+                  background: mode === m ? "rgba(0,230,118,0.12)" : "transparent",
+                  color: mode === m ? "#00e676" : "rgba(255,255,255,0.45)",
+                  fontFamily: "Rajdhani, sans-serif",
+                  letterSpacing: "0.04em"
+                }}
+                onClick={() => {
+                  setMode(m);
+                  setError(null);
+                  setSuccess(null);
+                  if (m === "create") resetCreateForm();
+                  else setLoadedTournamentId("");
+                }}
+                disabled={m === "edit" && !current?.id}
+              >
+                {m === "create" ? "Nuovo torneo" : "Modifica torneo"}
+              </button>
+            ))}
           </div>
 
           <button
             type="button"
-            className="rounded-lg border border-red-300 text-red-700 px-3 py-2 text-sm disabled:opacity-50"
+            className="sport-btn-danger text-sm"
             onClick={() => void onDeleteCurrentTournament()}
             disabled={!current?.id || deleteTournamentMutation.isPending}
           >
@@ -708,55 +726,84 @@ export function TournamentSetup() {
 
           <button
             type="button"
-            className="rounded-lg border border-red-300 text-red-700 px-3 py-2 text-sm disabled:opacity-50"
+            className="sport-btn-danger text-sm"
             onClick={() => void onDeleteCurrentPair()}
             disabled={!currentPair || deleteTournamentMutation.isPending}
           >
             Elimina coppia M/F
           </button>
         </div>
-        <div className="text-xs text-slate-500">
-          Coppie M/F rilevate: <strong>{tournamentPairs.length}</strong>
-          {currentPair ? ` - corrente: ${currentPair.label}` : ""}
+        <div className="text-xs" style={{ color: "rgba(255,255,255,0.3)" }}>
+          Coppie M/F rilevate:{" "}
+          <span style={{ color: "rgba(255,255,255,0.55)", fontWeight: 600 }}>{tournamentPairs.length}</span>
+          {currentPair ? ` — corrente: ${currentPair.label}` : ""}
         </div>
       </section>
 
+      {/* Step progress */}
       <ol className="grid gap-2 md:grid-cols-4">
-        {STEPS.map((label, index) => (
-          <li
-            key={label}
-            className={`rounded-lg border px-3 py-2 text-sm ${
-              index === step ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-700"
-            }`}
-          >
-            <span className="font-semibold mr-2">{index + 1}.</span>
-            {label}
-          </li>
-        ))}
+        {STEPS.map((label, index) => {
+          const isActive = index === step;
+          const isDone = index < step;
+          return (
+            <li
+              key={label}
+              className="rounded-xl px-4 py-3 text-sm font-semibold transition-all duration-200"
+              style={{
+                background: isActive ? "rgba(0,230,118,0.1)" : isDone ? "rgba(0,230,118,0.05)" : "rgba(255,255,255,0.03)",
+                border: isActive ? "1px solid rgba(0,230,118,0.35)" : isDone ? "1px solid rgba(0,230,118,0.15)" : "1px solid rgba(255,255,255,0.07)",
+                color: isActive ? "#00e676" : isDone ? "rgba(0,230,118,0.6)" : "rgba(255,255,255,0.35)",
+                fontFamily: "Rajdhani, sans-serif",
+                letterSpacing: "0.04em"
+              }}
+            >
+              <span className="mr-2" style={{ opacity: 0.6 }}>{index + 1}.</span>
+              {label}
+            </li>
+          );
+        })}
       </ol>
 
-      {error ? <div className="rounded-lg border border-red-300 bg-red-100 px-3 py-2 text-red-700 text-sm">{error}</div> : null}
-      {success ? (
-        <div className="rounded-lg border border-green-300 bg-green-100 px-3 py-2 text-green-700 text-sm">{success}</div>
-      ) : null}
-      {loadingEdit ? (
-        <div className="rounded-lg border bg-slate-100 px-3 py-2 text-slate-700 text-sm">Caricamento configurazione torneo...</div>
-      ) : null}
+      {error && <div className="sport-alert-error">{error}</div>}
+      {success && <div className="sport-alert-success">{success}</div>}
+      {loadingEdit && (
+        <div
+          className="rounded-xl px-4 py-3 text-sm flex items-center gap-2"
+          style={{ background: "rgba(59,130,246,0.08)", border: "1px solid rgba(59,130,246,0.2)", color: "#60a5fa" }}
+        >
+          <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          Caricamento configurazione torneo...
+        </div>
+      )}
 
-      <div className="grid gap-4 xl:grid-cols-[1fr_320px]">
-        <section className="rounded-xl border bg-white p-4 shadow-sm">
-          {step === 0 ? (
+      <div className="grid gap-4 xl:grid-cols-[1fr_300px]">
+        {/* Main form */}
+        <section className="rounded-xl p-5 space-y-5" style={cardStyle}>
+
+          {/* Step 0: Info Base */}
+          {step === 0 && (
             <div className="grid gap-4 md:grid-cols-2">
-              <label className="flex flex-col gap-1 md:col-span-2">
-                <span className="text-sm font-medium">Nome torneo</span>
-                <input className="rounded-lg border px-3 py-2" value={name} onChange={(event) => setName(event.target.value)} />
+              <label className="flex flex-col gap-1.5 md:col-span-2">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: "rgba(255,255,255,0.35)" }}>
+                  Nome torneo
+                </span>
+                <input
+                  className="sport-input"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                />
               </label>
 
-              <label className="flex flex-col gap-1">
-                <span className="text-sm font-medium">Anno</span>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: "rgba(255,255,255,0.35)" }}>
+                  Anno
+                </span>
                 <input
                   type="number"
-                  className="rounded-lg border px-3 py-2"
+                  className="sport-input"
                   value={year}
                   min={2020}
                   max={2100}
@@ -765,42 +812,48 @@ export function TournamentSetup() {
               </label>
 
               {mode === "create" ? (
-                <label className="inline-flex items-center gap-2 text-sm mt-6">
+                <label
+                  className="inline-flex items-center gap-3 text-sm font-medium mt-5 cursor-pointer"
+                  style={{ color: "rgba(255,255,255,0.7)" }}
+                >
                   <input
                     type="checkbox"
                     checked={createAsPair}
                     onChange={(event) => {
                       const checked = event.target.checked;
                       setCreateAsPair(checked);
-                      if (checked) {
-                        setGender("");
-                      }
+                      if (checked) setGender("");
                     }}
+                    className="w-4 h-4 rounded"
                   />
-                  Crea coppia tornei M/F (gestione centralizzata)
+                  Crea coppia tornei M/F
                 </label>
               ) : (
-                <div className="text-xs text-slate-500 mt-6">Modifica torneo singolo.</div>
+                <div className="text-xs mt-5" style={{ color: "rgba(255,255,255,0.3)" }}>Modifica torneo singolo.</div>
               )}
 
               {createAsPair && mode === "create" ? (
                 <>
-                  <label className="flex flex-col gap-1">
-                    <span className="text-sm font-medium">Max squadre Maschile (M)</span>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: "rgba(255,255,255,0.35)" }}>
+                      Max squadre Maschile
+                    </span>
                     <input
                       type="number"
                       min={2}
-                      className="rounded-lg border px-3 py-2"
+                      className="sport-input"
                       value={maleMaxTeams}
                       onChange={(event) => setMaleMaxTeams(Math.max(2, Number(event.target.value) || 2))}
                     />
                   </label>
-                  <label className="flex flex-col gap-1">
-                    <span className="text-sm font-medium">Max squadre Femminile (F)</span>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: "rgba(255,255,255,0.35)" }}>
+                      Max squadre Femminile
+                    </span>
                     <input
                       type="number"
                       min={2}
-                      className="rounded-lg border px-3 py-2"
+                      className="sport-input"
                       value={femaleMaxTeams}
                       onChange={(event) => setFemaleMaxTeams(Math.max(2, Number(event.target.value) || 2))}
                     />
@@ -808,10 +861,12 @@ export function TournamentSetup() {
                 </>
               ) : (
                 <>
-                  <label className="flex flex-col gap-1">
-                    <span className="text-sm font-medium">Genere torneo</span>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: "rgba(255,255,255,0.35)" }}>
+                      Genere torneo
+                    </span>
                     <select
-                      className="rounded-lg border px-3 py-2"
+                      className="sport-select"
                       value={gender}
                       onChange={(event) => {
                         const next = event.target.value as "" | "M" | "F";
@@ -827,237 +882,386 @@ export function TournamentSetup() {
                     </select>
                   </label>
 
-                  {gender ? (
-                    <label className="flex flex-col gap-1">
-                      <span className="text-sm font-medium">Numero max squadre</span>
+                  {gender && (
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: "rgba(255,255,255,0.35)" }}>
+                        Numero max squadre
+                      </span>
                       <input
                         type="number"
                         min={2}
-                        className="rounded-lg border px-3 py-2"
+                        className="sport-input"
                         value={maxTeams}
                         onChange={(event) => setMaxTeams(event.target.value === "" ? "" : Number(event.target.value))}
                       />
                     </label>
-                  ) : null}
+                  )}
                 </>
               )}
 
-              <label className="flex flex-col gap-1">
-                <span className="text-sm font-medium">Numero giorni torneo</span>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: "rgba(255,255,255,0.35)" }}>
+                  Numero giorni torneo
+                </span>
                 <input
                   type="number"
                   min={1}
-                  className="rounded-lg border px-3 py-2"
+                  className="sport-input"
                   value={totalDays}
                   onChange={(event) => setTotalDays(Math.max(1, Number(event.target.value) || 1))}
                 />
               </label>
 
-              <label className="flex flex-col gap-1">
-                <span className="text-sm font-medium">Durata match (min)</span>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: "rgba(255,255,255,0.35)" }}>
+                  Durata match (min)
+                </span>
                 <input
                   type="number"
                   min={5}
-                  className="rounded-lg border px-3 py-2"
+                  className="sport-input"
                   value={matchDuration}
                   onChange={(event) => setMatchDuration(Math.max(5, Number(event.target.value) || 5))}
                 />
               </label>
 
-              <label className="flex flex-col gap-1">
-                <span className="text-sm font-medium">Buffer tra match (min)</span>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: "rgba(255,255,255,0.35)" }}>
+                  Buffer tra match (min)
+                </span>
                 <input
                   type="number"
                   min={0}
-                  className="rounded-lg border px-3 py-2"
+                  className="sport-input"
                   value={bufferMinutes}
                   onChange={(event) => setBufferMinutes(Math.max(0, Number(event.target.value) || 0))}
                 />
               </label>
 
               <div className="md:col-span-2 space-y-2">
-                <div className="text-sm font-medium">Finals Days (multi-select)</div>
+                <div className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: "rgba(255,255,255,0.35)" }}>
+                  Finals Days
+                </div>
                 <div className="flex flex-wrap gap-2">
-                  {Array.from({ length: totalDays }, (_, index) => index + 1).map((dayNumber) => (
-                    <label key={dayNumber} className="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={finalsDays.includes(dayNumber)}
-                        onChange={(event) => toggleFinalsDay(dayNumber, event.target.checked)}
-                      />
-                      Giorno {dayNumber}
-                    </label>
-                  ))}
+                  {Array.from({ length: totalDays }, (_, index) => index + 1).map((dayNumber) => {
+                    const isChecked = finalsDays.includes(dayNumber);
+                    return (
+                      <label
+                        key={dayNumber}
+                        className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium cursor-pointer transition-all duration-150"
+                        style={{
+                          background: isChecked ? "rgba(245,158,11,0.12)" : "rgba(255,255,255,0.04)",
+                          border: isChecked ? "1px solid rgba(245,158,11,0.35)" : "1px solid rgba(255,255,255,0.08)",
+                          color: isChecked ? "#f59e0b" : "rgba(255,255,255,0.45)"
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(event) => toggleFinalsDay(dayNumber, event.target.checked)}
+                          className="w-3.5 h-3.5"
+                        />
+                        G{dayNumber}
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
             </div>
-          ) : null}
+          )}
 
-          {step === 1 ? (
+          {/* Step 1: Fasce Orarie */}
+          {step === 1 && (
             <div className="space-y-4">
               {days.map((day, dayIndex) => {
                 const preview = slotPreview[dayIndex]?.slots ?? [];
+                const isFinals = finalsDays.includes(dayIndex + 1);
                 return (
-                  <article key={`day-${dayIndex}`} className="rounded-lg border p-3 space-y-3">
-                    <div className="grid gap-3 md:grid-cols-3">
-                      <label className="flex flex-col gap-1">
-                        <span className="text-sm font-medium">Etichetta</span>
-                        <input
-                          className="rounded-lg border px-3 py-2"
-                          value={day.label}
-                          onChange={(event) => updateDay(dayIndex, "label", event.target.value)}
-                        />
-                      </label>
-                      <label className="flex flex-col gap-1">
-                        <span className="text-sm font-medium">Data</span>
-                        <input
-                          type="date"
-                          className="rounded-lg border px-3 py-2"
-                          value={day.date}
-                          onChange={(event) => updateDay(dayIndex, "date", event.target.value)}
-                        />
-                      </label>
-                      <label className="inline-flex items-center gap-2 mt-7 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={finalsDays.includes(dayIndex + 1)}
-                          onChange={(event) => toggleFinalsDay(dayIndex + 1, event.target.checked)}
-                        />
-                        Giorno finali
-                      </label>
+                  <article
+                    key={`day-${dayIndex}`}
+                    className="rounded-xl overflow-hidden"
+                    style={{
+                      border: isFinals ? "1px solid rgba(245,158,11,0.35)" : "1px solid rgba(255,255,255,0.08)"
+                    }}
+                  >
+                    {/* Day header */}
+                    <div
+                      className="flex items-center justify-between px-4 py-3"
+                      style={{
+                        background: isFinals ? "rgba(245,158,11,0.1)" : "rgba(255,255,255,0.05)",
+                        borderBottom: isFinals ? "1px solid rgba(245,158,11,0.2)" : "1px solid rgba(255,255,255,0.06)"
+                      }}
+                    >
+                      <span
+                        className="font-bold text-base"
+                        style={{ fontFamily: "Rajdhani, sans-serif", color: isFinals ? "#f59e0b" : "rgba(255,255,255,0.85)" }}
+                      >
+                        {day.label || `Giorno ${dayIndex + 1}`}
+                      </span>
+                      {isFinals && (
+                        <span
+                          className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                          style={{ background: "rgba(245,158,11,0.15)", color: "#f59e0b", border: "1px solid rgba(245,158,11,0.3)" }}
+                        >
+                          FINALS DAY
+                        </span>
+                      )}
                     </div>
 
-                    <div className="space-y-2">
-                      {day.windows.map((window, windowIndex) => (
-                        <div key={`window-${windowIndex}`} className="grid gap-2 grid-cols-[1fr_1fr_auto]">
+                    <div className="p-4 space-y-5">
+                      {/* Info giorno: etichetta + data + checkbox */}
+                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        <label className="flex flex-col gap-1.5">
+                          <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.4)" }}>
+                            Etichetta giorno
+                          </span>
                           <input
-                            type="time"
-                            className="rounded-lg border px-3 py-2"
-                            value={window.start}
-                            onChange={(event) => updateWindow(dayIndex, windowIndex, "start", event.target.value)}
+                            className="sport-input"
+                            value={day.label}
+                            onChange={(event) => updateDay(dayIndex, "label", event.target.value)}
                           />
+                        </label>
+
+                        <label className="flex flex-col gap-1.5">
+                          <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.4)" }}>
+                            Data
+                          </span>
                           <input
-                            type="time"
-                            className="rounded-lg border px-3 py-2"
-                            value={window.end}
-                            onChange={(event) => updateWindow(dayIndex, windowIndex, "end", event.target.value)}
+                            type="date"
+                            className="sport-input"
+                            value={day.date}
+                            onChange={(event) => updateDay(dayIndex, "date", event.target.value)}
                           />
-                          <button
-                            type="button"
-                            className="rounded-lg border px-3 py-2 text-red-700 disabled:opacity-50"
-                            onClick={() => removeWindow(dayIndex, windowIndex)}
-                            disabled={day.windows.length === 1}
-                          >
-                            Rimuovi
-                          </button>
-                        </div>
-                      ))}
-                    </div>
+                        </label>
 
-                    <button type="button" className="rounded-lg border px-3 py-2 text-sm" onClick={() => addWindow(dayIndex)}>
-                      + Aggiungi fascia oraria
-                    </button>
-
-                    <div className="rounded-lg bg-slate-50 border px-3 py-2 text-sm">
-                      <div className="font-medium">Preview slot: {preview.length}</div>
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {preview.length > 0 ? (
-                          preview.map((slot) => (
-                            <span key={`${slot.start_time}-${slot.end_time}`} className="rounded bg-white border px-2 py-0.5 text-xs">
-                              {slot.start_time}-{slot.end_time}
-                            </span>
-                          ))
-                        ) : (
-                          <span className="text-slate-500">Nessuno slot generato con i parametri correnti.</span>
-                        )}
+                        <label
+                          className="flex items-center gap-3 cursor-pointer rounded-xl px-4 py-3 self-end"
+                          style={{
+                            background: isFinals ? "rgba(245,158,11,0.08)" : "rgba(255,255,255,0.04)",
+                            border: isFinals ? "1px solid rgba(245,158,11,0.25)" : "1px solid rgba(255,255,255,0.08)"
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={finalsDays.includes(dayIndex + 1)}
+                            onChange={(event) => toggleFinalsDay(dayIndex + 1, event.target.checked)}
+                            className="w-4 h-4 flex-shrink-0"
+                          />
+                          <span className="text-sm font-medium" style={{ color: isFinals ? "#f59e0b" : "rgba(255,255,255,0.55)" }}>
+                            Giorno finali
+                          </span>
+                        </label>
                       </div>
+
+                      {/* Fasce orarie */}
+                      <div className="space-y-2">
+                        <div className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: "rgba(255,255,255,0.35)" }}>
+                          Fasce orarie
+                        </div>
+
+                        {/* Intestazione colonne */}
+                        <div className="grid gap-3 items-end" style={{ gridTemplateColumns: "1fr 1fr 1fr auto" }}>
+                          <span className="text-xs font-medium pb-1" style={{ color: "rgba(255,255,255,0.35)" }}>
+                            Ora inizio
+                          </span>
+                          <span className="text-xs font-medium pb-1" style={{ color: "rgba(255,255,255,0.35)" }}>
+                            Ora fine
+                          </span>
+                          <span className="text-xs font-medium pb-1" style={{ color: "rgba(255,255,255,0.35)" }}>
+                            Slot generati
+                          </span>
+                          <span />
+                        </div>
+
+                        {day.windows.map((window, windowIndex) => {
+                          const winSlots = generateSlotsForWindow(window, matchDuration, bufferMinutes);
+                          return (
+                            <div
+                              key={`window-${windowIndex}`}
+                              className="grid gap-3 items-center rounded-xl px-3 py-2.5"
+                              style={{
+                                gridTemplateColumns: "1fr 1fr 1fr auto",
+                                background: "rgba(255,255,255,0.03)",
+                                border: "1px solid rgba(255,255,255,0.06)"
+                              }}
+                            >
+                              <input
+                                type="time"
+                                className="sport-input"
+                                value={window.start}
+                                onChange={(event) => updateWindow(dayIndex, windowIndex, "start", event.target.value)}
+                              />
+                              <input
+                                type="time"
+                                className="sport-input"
+                                value={window.end}
+                                onChange={(event) => updateWindow(dayIndex, windowIndex, "end", event.target.value)}
+                              />
+                              <span
+                                className="text-sm font-semibold"
+                                style={{
+                                  fontFamily: "Rajdhani, sans-serif",
+                                  color: winSlots.length > 0 ? "#00e676" : "rgba(255,255,255,0.2)"
+                                }}
+                              >
+                                {winSlots.length > 0 ? `${winSlots.length} slot` : "—"}
+                              </span>
+                              <button
+                                type="button"
+                                className="sport-btn-danger text-xs px-3 py-2 whitespace-nowrap"
+                                onClick={() => removeWindow(dayIndex, windowIndex)}
+                                disabled={day.windows.length === 1}
+                              >
+                                Rimuovi
+                              </button>
+                            </div>
+                          );
+                        })}
+
+                        <button
+                          type="button"
+                          className="sport-btn-secondary text-sm mt-1"
+                          onClick={() => addWindow(dayIndex)}
+                        >
+                          + Aggiungi fascia oraria
+                        </button>
+                      </div>
+
+                      {/* Preview slot del giorno */}
+                      {preview.length > 0 && (
+                        <div
+                          className="rounded-xl px-4 py-3"
+                          style={{ background: "rgba(0,230,118,0.04)", border: "1px solid rgba(0,230,118,0.12)" }}
+                        >
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: "rgba(0,230,118,0.7)" }}>
+                              Slot totali del giorno
+                            </span>
+                            <span
+                              className="rounded-full px-2 py-0.5 text-xs font-bold"
+                              style={{ background: "rgba(0,230,118,0.15)", color: "#00e676" }}
+                            >
+                              {preview.length}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {preview.map((slot) => (
+                              <span
+                                key={`${slot.start_time}-${slot.end_time}`}
+                                className="rounded-lg px-2.5 py-1 text-xs font-medium"
+                                style={{ background: "rgba(0,230,118,0.08)", color: "#00e676", border: "1px solid rgba(0,230,118,0.15)" }}
+                              >
+                                {slot.start_time} – {slot.end_time}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {preview.length === 0 && (
+                        <div
+                          className="rounded-xl px-4 py-3 text-xs"
+                          style={{ background: "rgba(239,68,68,0.05)", border: "1px solid rgba(239,68,68,0.15)", color: "#f87171" }}
+                        >
+                          Nessuno slot generato — controlla che l'ora di fine sia successiva all'ora di inizio e che ci sia spazio per almeno un match ({matchDuration} min).
+                        </div>
+                      )}
                     </div>
                   </article>
                 );
               })}
             </div>
-          ) : null}
+          )}
 
-          {step === 2 ? (
-            <div className="space-y-4">
-              <div className="grid gap-3 md:grid-cols-2">
-                <label className="flex flex-col gap-1">
-                  <span className="text-sm font-medium">Squadre per girone</span>
+          {/* Step 2: Formato */}
+          {step === 2 && (
+            <div className="space-y-5">
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: "rgba(255,255,255,0.35)" }}>
+                    Squadre per girone
+                  </span>
                   <input
                     type="number"
                     min={2}
-                    className="rounded-lg border px-3 py-2"
+                    className="sport-input"
                     value={teamsPerGroup}
                     onChange={(event) => setTeamsPerGroup(Math.max(2, Number(event.target.value) || 2))}
                   />
                 </label>
 
-                <label className="flex flex-col gap-1">
-                  <span className="text-sm font-medium">Squadre che avanzano</span>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: "rgba(255,255,255,0.35)" }}>
+                    Squadre che avanzano
+                  </span>
                   <input
                     type="number"
                     min={1}
-                    className="rounded-lg border px-3 py-2"
+                    className="sport-input"
                     value={teamsAdvancingPerGroup}
                     onChange={(event) => setTeamsAdvancingPerGroup(Math.max(1, Number(event.target.value) || 1))}
                   />
                 </label>
 
-                <label className="inline-flex items-center gap-2 text-sm mt-2">
-                  <input type="checkbox" checked={wildcardEnabled} onChange={(event) => setWildcardEnabled(event.target.checked)} />
+                <label
+                  className="inline-flex items-center gap-3 text-sm font-medium cursor-pointer mt-2"
+                  style={{ color: wildcardEnabled ? "#f97316" : "rgba(255,255,255,0.55)" }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={wildcardEnabled}
+                    onChange={(event) => setWildcardEnabled(event.target.checked)}
+                    className="w-4 h-4"
+                  />
                   Wild card abilitata
                 </label>
 
-                {wildcardEnabled ? (
-                  <label className="flex flex-col gap-1">
-                    <span className="text-sm font-medium">Numero wild card</span>
+                {wildcardEnabled && (
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: "rgba(255,255,255,0.35)" }}>
+                      Numero wild card
+                    </span>
                     <input
                       type="number"
                       min={0}
-                      className="rounded-lg border px-3 py-2"
+                      className="sport-input"
                       value={wildcardCount}
                       onChange={(event) => setWildcardCount(Math.max(0, Number(event.target.value) || 0))}
                     />
                   </label>
-                ) : null}
+                )}
               </div>
 
               <div className="grid gap-3 md:grid-cols-3">
-                <label className="flex flex-col gap-1">
-                  <span className="text-sm font-medium">Punti vittoria</span>
-                  <input
-                    type="number"
-                    className="rounded-lg border px-3 py-2"
-                    value={pointsWin}
-                    onChange={(event) => setPointsWin(Number(event.target.value))}
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-sm font-medium">Punti pareggio</span>
-                  <input
-                    type="number"
-                    className="rounded-lg border px-3 py-2"
-                    value={pointsDraw}
-                    onChange={(event) => setPointsDraw(Number(event.target.value))}
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-sm font-medium">Punti sconfitta</span>
-                  <input
-                    type="number"
-                    className="rounded-lg border px-3 py-2"
-                    value={pointsLoss}
-                    onChange={(event) => setPointsLoss(Number(event.target.value))}
-                  />
-                </label>
+                {[
+                  { label: "Punti vittoria", value: pointsWin, setter: setPointsWin },
+                  { label: "Punti pareggio", value: pointsDraw, setter: setPointsDraw },
+                  { label: "Punti sconfitta", value: pointsLoss, setter: setPointsLoss }
+                ].map(({ label, value, setter }) => (
+                  <label key={label} className="flex flex-col gap-1.5">
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: "rgba(255,255,255,0.35)" }}>
+                      {label}
+                    </span>
+                    <input
+                      type="number"
+                      className="sport-input"
+                      value={value}
+                      onChange={(event) => setter(Number(event.target.value))}
+                    />
+                  </label>
+                ))}
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-medium">Criteri spareggio (drag & drop)</h3>
+                  <h3
+                    className="font-bold text-sm uppercase tracking-widest"
+                    style={{ fontFamily: "Rajdhani, sans-serif", color: "rgba(255,255,255,0.5)", letterSpacing: "0.12em" }}
+                  >
+                    Criteri spareggio
+                  </h3>
                   <button
                     type="button"
-                    className="rounded-lg border px-3 py-1.5 text-sm"
+                    className="sport-btn-secondary text-xs"
                     onClick={() => setTiebreakers(DEFAULT_TIEBREAKERS)}
                   >
                     Ripristina default
@@ -1073,7 +1277,8 @@ export function TournamentSetup() {
                           <div className="flex gap-1">
                             <button
                               type="button"
-                              className="rounded border px-2 text-xs"
+                              className="rounded-lg px-2 text-xs font-bold transition-colors"
+                              style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.4)" }}
                               onClick={() => moveTiebreaker(index, -1)}
                               disabled={index === 0}
                             >
@@ -1081,7 +1286,8 @@ export function TournamentSetup() {
                             </button>
                             <button
                               type="button"
-                              className="rounded border px-2 text-xs"
+                              className="rounded-lg px-2 text-xs font-bold transition-colors"
+                              style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.4)" }}
                               onClick={() => moveTiebreaker(index, 1)}
                               disabled={index === tiebreakers.length - 1}
                             >
@@ -1095,47 +1301,89 @@ export function TournamentSetup() {
                 </DndContext>
               </div>
             </div>
-          ) : null}
+          )}
 
-          {step === 3 ? (
+          {/* Step 3: Pesi Penalita */}
+          {step === 3 && (
             <div className="space-y-4">
-              {PENALTY_FIELDS.map((field) => (
-                <div key={field.key} className="rounded-lg border p-3">
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <div>
-                      <div className="font-medium">{field.label}</div>
-                      <p className="text-xs text-slate-500">{field.description}</p>
+              {PENALTY_FIELDS.map((field) => {
+                const val = penaltyWeights[field.key];
+                const pct = (val / 40) * 100;
+                return (
+                  <div
+                    key={field.key}
+                    className="rounded-xl p-4 space-y-3"
+                    style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.06)" }}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="font-semibold text-sm" style={{ color: "rgba(255,255,255,0.85)" }}>{field.label}</div>
+                        <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.35)" }}>{field.description}</p>
+                      </div>
+                      <span
+                        className="rounded-lg px-2.5 py-1 text-sm font-bold flex-shrink-0"
+                        style={{
+                          fontFamily: "Rajdhani, sans-serif",
+                          background: val > 15 ? "rgba(239,68,68,0.15)" : val > 8 ? "rgba(245,158,11,0.12)" : "rgba(0,230,118,0.1)",
+                          color: val > 15 ? "#f87171" : val > 8 ? "#fbbf24" : "#00e676",
+                          border: `1px solid ${val > 15 ? "rgba(239,68,68,0.25)" : val > 8 ? "rgba(245,158,11,0.2)" : "rgba(0,230,118,0.2)"}`
+                        }}
+                      >
+                        {val}
+                      </span>
                     </div>
-                    <span className="rounded bg-slate-900 text-white px-2 py-0.5 text-xs">{penaltyWeights[field.key]}</span>
+                    <div className="space-y-1">
+                      <div className="sport-progress-track">
+                        <div
+                          className="sport-progress-fill"
+                          style={{ width: `${pct}%`, background: val > 15 ? "#ef4444" : val > 8 ? "#f59e0b" : "#00e676" }}
+                        />
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={40}
+                        step={1}
+                        className="w-full h-1 rounded-full appearance-none cursor-pointer"
+                        style={{ accentColor: val > 15 ? "#ef4444" : val > 8 ? "#f59e0b" : "#00e676" }}
+                        value={val}
+                        onChange={(event) =>
+                          setPenaltyWeights((current) => ({
+                            ...current,
+                            [field.key]: Number(event.target.value)
+                          }))
+                        }
+                      />
+                    </div>
                   </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={40}
-                    step={1}
-                    className="w-full"
-                    value={penaltyWeights[field.key]}
-                    onChange={(event) =>
-                      setPenaltyWeights((current) => ({
-                        ...current,
-                        [field.key]: Number(event.target.value)
-                      }))
-                    }
-                  />
-                </div>
-              ))}
+                );
+              })}
 
-              <div className="rounded-lg border bg-slate-50 px-3 py-2">
-                <div className="text-sm font-medium">Preview formula obiettivo</div>
-                <code className="text-xs text-slate-700 break-all">minimize: {objectiveFormula}</code>
+              <div
+                className="rounded-xl px-4 py-3"
+                style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}
+              >
+                <div
+                  className="text-xs font-semibold uppercase tracking-widest mb-2"
+                  style={{ color: "rgba(255,255,255,0.35)", letterSpacing: "0.1em" }}
+                >
+                  Formula obiettivo
+                </div>
+                <code
+                  className="text-xs break-all"
+                  style={{ color: "rgba(0,230,118,0.7)", fontFamily: "monospace" }}
+                >
+                  minimize: {objectiveFormula}
+                </code>
               </div>
             </div>
-          ) : null}
+          )}
 
-          <footer className="mt-6 pt-4 border-t flex items-center justify-between">
+          {/* Footer navigation */}
+          <footer className="mt-6 pt-4 flex items-center justify-between" style={{ borderTop: "1px solid rgba(255,255,255,0.07)" }}>
             <button
               type="button"
-              className="rounded-lg border px-4 py-2 disabled:opacity-50"
+              className="sport-btn-secondary"
               onClick={prevStep}
               disabled={step === 0 || saving || loadingEdit}
             >
@@ -1144,53 +1392,65 @@ export function TournamentSetup() {
 
             <div className="flex gap-2">
               {step < STEPS.length - 1 ? (
-                <button type="button" className="rounded-lg border px-4 py-2" onClick={nextStep} disabled={saving || loadingEdit}>
+                <button
+                  type="button"
+                  className="sport-btn-primary"
+                  onClick={nextStep}
+                  disabled={saving || loadingEdit}
+                >
                   Avanti
                 </button>
               ) : (
                 <button
                   type="button"
-                  className="rounded-lg bg-slate-900 text-white px-4 py-2 disabled:opacity-50"
+                  className="sport-btn-primary"
                   onClick={() => void submit()}
                   disabled={saving || loadingEdit}
                 >
-                  {saving ? "Salvataggio..." : mode === "edit" ? "Aggiorna torneo" : createAsPair ? "Crea coppia M/F" : "Salva torneo"}
+                  {saving ? (
+                    <span className="flex items-center gap-2">
+                      <svg className="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Salvataggio...
+                    </span>
+                  ) : mode === "edit" ? "Aggiorna torneo" : createAsPair ? "Crea coppia M/F" : "Salva torneo"}
                 </button>
               )}
             </div>
           </footer>
         </section>
 
-        <aside className="rounded-xl border bg-white p-4 shadow-sm h-fit space-y-3">
-          <h2 className="font-semibold">Riepilogo Rapido</h2>
-          <div className="text-sm space-y-1">
-            <div>
-              <span className="text-slate-500">Modalita:</span>{" "}
-              {mode === "edit" ? "Modifica" : createAsPair ? "Creazione coppia M/F" : "Creazione singolo"}
-            </div>
-            <div>
-              <span className="text-slate-500">Torneo:</span> {name || "-"} {year}
-            </div>
-            {mode !== "edit" && createAsPair ? (
-              <div>
-                <span className="text-slate-500">Max squadre M/F:</span> {maleMaxTeams} / {femaleMaxTeams}
+        {/* Summary sidebar */}
+        <aside
+          className="rounded-xl p-4 h-fit space-y-4"
+          style={cardStyle}
+        >
+          <h2
+            className="font-bold text-sm uppercase tracking-widest"
+            style={{ fontFamily: "Rajdhani, sans-serif", color: "rgba(255,255,255,0.4)", letterSpacing: "0.12em" }}
+          >
+            Riepilogo
+          </h2>
+          <div className="space-y-3 text-sm">
+            {[
+              { label: "Modalita", value: mode === "edit" ? "Modifica" : createAsPair ? "Coppia M/F" : "Singolo" },
+              { label: "Torneo", value: `${name || "—"} ${year}` },
+              ...(mode !== "edit" && createAsPair
+                ? [{ label: "Max sq. M/F", value: `${maleMaxTeams} / ${femaleMaxTeams}` }]
+                : []),
+              { label: "Giorni", value: String(totalDays) },
+              { label: "Finals days", value: summary.finalsDaysLabel },
+              { label: "Slot stimati", value: String(summary.totalSlots) },
+              { label: "Formato", value: `${teamsPerGroup} per girone, ${teamsAdvancingPerGroup} qualif.` },
+              { label: "Wild card", value: wildcardEnabled ? String(wildcardCount) : "Off" }
+            ].map(({ label, value }) => (
+              <div key={label} className="flex items-start justify-between gap-2">
+                <span className="text-xs flex-shrink-0" style={{ color: "rgba(255,255,255,0.3)" }}>{label}</span>
+                <span className="text-xs text-right font-medium" style={{ color: "rgba(255,255,255,0.65)" }}>{value}</span>
               </div>
-            ) : null}
-            <div>
-              <span className="text-slate-500">Giorni:</span> {totalDays}
-            </div>
-            <div>
-              <span className="text-slate-500">Finals days:</span> {summary.finalsDaysLabel}
-            </div>
-            <div>
-              <span className="text-slate-500">Slot stimati:</span> {summary.totalSlots}
-            </div>
-            <div>
-              <span className="text-slate-500">Formato:</span> {teamsPerGroup} per girone, {teamsAdvancingPerGroup} qualificate
-            </div>
-            <div>
-              <span className="text-slate-500">Wild card:</span> {wildcardEnabled ? `${wildcardCount}` : "Off"}
-            </div>
+            ))}
           </div>
         </aside>
       </div>

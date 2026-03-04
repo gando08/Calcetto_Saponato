@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
 
@@ -27,6 +27,67 @@ function downloadBlobFile(blob: Blob, filename: string) {
   anchor.remove();
   window.URL.revokeObjectURL(url);
 }
+
+const SCOPE_OPTIONS: { value: ExportScope; label: string; description: string; icon: ReactNode }[] = [
+  {
+    value: "all",
+    label: "Tutto il torneo",
+    description: "Maschile + Femminile",
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+        <path d="M3 12h18M3 6h18M3 18h18" />
+      </svg>
+    )
+  },
+  {
+    value: "male",
+    label: "Solo Maschile",
+    description: "Partite M",
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+        <circle cx="10" cy="14" r="5" />
+        <path d="M19 5l-5 5M19 5h-4M19 5v4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    )
+  },
+  {
+    value: "female",
+    label: "Solo Femminile",
+    description: "Partite F",
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+        <circle cx="12" cy="10" r="5" />
+        <path d="M12 15v5M10 18h4" strokeLinecap="round" />
+      </svg>
+    )
+  },
+  {
+    value: "team",
+    label: "Per squadra",
+    description: "Filtra per team",
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+      </svg>
+    )
+  },
+  {
+    value: "day",
+    label: "Per giorno",
+    description: "Filtra per data",
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+        <rect x="3" y="4" width="18" height="18" rx="2" />
+        <line x1="16" y1="2" x2="16" y2="6" />
+        <line x1="8" y1="2" x2="8" y2="6" />
+        <line x1="3" y1="10" x2="21" y2="10" />
+      </svg>
+    )
+  }
+];
 
 export function Export() {
   const { current, setCurrent } = useTournamentStore();
@@ -156,21 +217,35 @@ export function Export() {
     window.print();
   };
 
+  const cardStyle = { background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" };
+  const isExportDisabled = !tid || isPending || (scope === "team" && !selectedTeamId) || (scope === "day" && !selectedDayId);
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
+      {/* Page header */}
       <header>
-        <h1 className="text-2xl font-bold">Export</h1>
-        <p className="text-sm text-slate-600">Esporta calendario in CSV/PDF o stampa con scope per torneo, genere, squadra o giorno.</p>
+        <h1
+          className="text-3xl font-extrabold tracking-tight"
+          style={{ fontFamily: "Rajdhani, sans-serif", color: "rgba(255,255,255,0.95)" }}
+        >
+          Export
+        </h1>
+        <p className="text-sm mt-1" style={{ color: "rgba(255,255,255,0.4)" }}>
+          Esporta calendario in CSV/PDF o stampa con filtri per genere, squadra o giorno.
+        </p>
       </header>
 
-      {errorMessage ? <div className="rounded-lg border border-red-300 bg-red-100 px-3 py-2 text-red-700 text-sm">{errorMessage}</div> : null}
-      {successMessage ? <div className="rounded-lg border border-green-300 bg-green-100 px-3 py-2 text-green-700 text-sm">{successMessage}</div> : null}
+      {errorMessage && <div className="sport-alert-error">{errorMessage}</div>}
+      {successMessage && <div className="sport-alert-success">{successMessage}</div>}
 
-      <section className="rounded-xl border bg-white p-4 shadow-sm space-y-4">
-        <label className="flex flex-col gap-1 max-w-md">
-          <span className="text-xs uppercase tracking-wide text-slate-500">Torneo attivo</span>
+      {/* Tournament selector */}
+      <section className="rounded-xl p-4" style={cardStyle}>
+        <label className="flex flex-col gap-1.5 max-w-md">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: "rgba(255,255,255,0.35)" }}>
+            Torneo attivo
+          </span>
           <select
-            className="rounded-lg border px-3 py-2"
+            className="sport-select"
             value={current?.id || ""}
             onChange={(event) => {
               const selected = (tournamentsQuery.data || []).find((t: { id: string }) => t.id === event.target.value);
@@ -184,50 +259,56 @@ export function Export() {
             ))}
           </select>
         </label>
+      </section>
 
-        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-          <button
-            type="button"
-            className={`rounded-lg border px-3 py-2 text-left ${scope === "all" ? "bg-slate-900 text-white border-slate-900" : ""}`}
-            onClick={() => setScope("all")}
-          >
-            Tutto il torneo (M + F)
-          </button>
-          <button
-            type="button"
-            className={`rounded-lg border px-3 py-2 text-left ${scope === "male" ? "bg-slate-900 text-white border-slate-900" : ""}`}
-            onClick={() => setScope("male")}
-          >
-            Solo Maschile
-          </button>
-          <button
-            type="button"
-            className={`rounded-lg border px-3 py-2 text-left ${scope === "female" ? "bg-slate-900 text-white border-slate-900" : ""}`}
-            onClick={() => setScope("female")}
-          >
-            Solo Femminile
-          </button>
-          <button
-            type="button"
-            className={`rounded-lg border px-3 py-2 text-left ${scope === "team" ? "bg-slate-900 text-white border-slate-900" : ""}`}
-            onClick={() => setScope("team")}
-          >
-            Per squadra
-          </button>
-          <button
-            type="button"
-            className={`rounded-lg border px-3 py-2 text-left ${scope === "day" ? "bg-slate-900 text-white border-slate-900" : ""}`}
-            onClick={() => setScope("day")}
-          >
-            Per giorno
-          </button>
+      {/* Scope selector */}
+      <section className="rounded-xl p-4 space-y-4" style={cardStyle}>
+        <h2
+          className="font-bold text-sm uppercase tracking-widest"
+          style={{ fontFamily: "Rajdhani, sans-serif", color: "rgba(255,255,255,0.4)", letterSpacing: "0.12em" }}
+        >
+          Scope di export
+        </h2>
+
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+          {SCOPE_OPTIONS.map((option) => {
+            const isActive = scope === option.value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => setScope(option.value)}
+                className="rounded-xl p-3 text-left transition-all duration-200 space-y-2"
+                style={{
+                  background: isActive ? "rgba(0,230,118,0.1)" : "rgba(255,255,255,0.03)",
+                  border: isActive ? "1px solid rgba(0,230,118,0.35)" : "1px solid rgba(255,255,255,0.07)",
+                  color: isActive ? "#00e676" : "rgba(255,255,255,0.5)"
+                }}
+              >
+                <div style={{ color: isActive ? "#00e676" : "rgba(255,255,255,0.3)" }}>
+                  {option.icon}
+                </div>
+                <div>
+                  <div className="font-semibold text-sm" style={{ fontFamily: "Rajdhani, sans-serif", color: isActive ? "#00e676" : "rgba(255,255,255,0.75)" }}>
+                    {option.label}
+                  </div>
+                  <div className="text-xs" style={{ color: "rgba(255,255,255,0.3)" }}>
+                    {option.description}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
         </div>
 
-        {scope === "team" ? (
-          <label className="flex flex-col gap-1 max-w-md">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Squadra</span>
+        {/* Team filter */}
+        {scope === "team" && (
+          <label className="flex flex-col gap-1.5 max-w-md">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: "rgba(255,255,255,0.35)" }}>
+              Squadra
+            </span>
             <select
-              className="rounded-lg border px-3 py-2"
+              className="sport-select"
               value={selectedTeamId}
               onChange={(event) => setSelectedTeamId(event.target.value)}
               disabled={teamOptions.length === 0}
@@ -243,13 +324,16 @@ export function Export() {
               )}
             </select>
           </label>
-        ) : null}
+        )}
 
-        {scope === "day" ? (
-          <label className="flex flex-col gap-1 max-w-md">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Giorno</span>
+        {/* Day filter */}
+        {scope === "day" && (
+          <label className="flex flex-col gap-1.5 max-w-md">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: "rgba(255,255,255,0.35)" }}>
+              Giorno
+            </span>
             <select
-              className="rounded-lg border px-3 py-2"
+              className="sport-select"
               value={selectedDayId}
               onChange={(event) => setSelectedDayId(event.target.value)}
               disabled={dayOptions.length === 0}
@@ -265,29 +349,87 @@ export function Export() {
               )}
             </select>
           </label>
-        ) : null}
+        )}
+      </section>
 
-        <div className="flex flex-wrap gap-2">
+      {/* Export actions */}
+      <section className="rounded-xl p-4 space-y-4" style={cardStyle}>
+        <h2
+          className="font-bold text-sm uppercase tracking-widest"
+          style={{ fontFamily: "Rajdhani, sans-serif", color: "rgba(255,255,255,0.4)", letterSpacing: "0.12em" }}
+        >
+          Esporta
+        </h2>
+
+        <div className="flex flex-wrap gap-3">
+          {/* CSV */}
           <button
             type="button"
-            className="rounded-lg border px-4 py-2 bg-slate-50 hover:bg-slate-100 disabled:opacity-50"
+            className="flex items-center gap-3 rounded-xl px-5 py-3 font-semibold text-sm transition-all duration-200 disabled:opacity-40"
+            style={{
+              background: isExportDisabled ? "rgba(255,255,255,0.04)" : "rgba(0,230,118,0.1)",
+              border: isExportDisabled ? "1px solid rgba(255,255,255,0.07)" : "1px solid rgba(0,230,118,0.3)",
+              color: isExportDisabled ? "rgba(255,255,255,0.25)" : "#00e676",
+              cursor: isExportDisabled ? "not-allowed" : "pointer"
+            }}
             onClick={() => void onExportCsv()}
-            disabled={!tid || isPending || (scope === "team" && !selectedTeamId) || (scope === "day" && !selectedDayId)}
+            disabled={isExportDisabled}
           >
-            {exportCsvMutation.isPending ? "Esportazione..." : "📄 CSV"}
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="16" y1="13" x2="8" y2="13" />
+              <line x1="16" y1="17" x2="8" y2="17" />
+              <line x1="10" y1="9" x2="8" y2="9" />
+            </svg>
+            {exportCsvMutation.isPending ? "Esportazione..." : "Esporta CSV"}
           </button>
+
+          {/* PDF */}
           <button
             type="button"
-            className="rounded-lg border px-4 py-2 bg-slate-50 hover:bg-slate-100 disabled:opacity-50"
+            className="flex items-center gap-3 rounded-xl px-5 py-3 font-semibold text-sm transition-all duration-200 disabled:opacity-40"
+            style={{
+              background: isExportDisabled ? "rgba(255,255,255,0.04)" : "rgba(249,115,22,0.1)",
+              border: isExportDisabled ? "1px solid rgba(255,255,255,0.07)" : "1px solid rgba(249,115,22,0.3)",
+              color: isExportDisabled ? "rgba(255,255,255,0.25)" : "#f97316",
+              cursor: isExportDisabled ? "not-allowed" : "pointer"
+            }}
             onClick={() => void onExportPdf()}
-            disabled={!tid || isPending || (scope === "team" && !selectedTeamId) || (scope === "day" && !selectedDayId)}
+            disabled={isExportDisabled}
           >
-            {exportPdfMutation.isPending ? "Generazione..." : "📑 PDF"}
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <path d="M9 15v-4h2a2 2 0 0 1 0 4H9z" />
+            </svg>
+            {exportPdfMutation.isPending ? "Generazione..." : "Esporta PDF"}
           </button>
-          <button type="button" className="rounded-lg border px-4 py-2 bg-slate-50 hover:bg-slate-100" onClick={printScope} disabled={isPending}>
-            🖨 Stampa
+
+          {/* Print */}
+          <button
+            type="button"
+            className="flex items-center gap-3 rounded-xl px-5 py-3 font-semibold text-sm transition-all duration-200 disabled:opacity-40"
+            style={{
+              background: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(255,255,255,0.08)",
+              color: "rgba(255,255,255,0.55)"
+            }}
+            onClick={printScope}
+            disabled={isPending}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+              <polyline points="6 9 6 2 18 2 18 9" />
+              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+              <rect x="6" y="14" width="12" height="8" />
+            </svg>
+            Stampa
           </button>
         </div>
+
+        <p className="text-xs" style={{ color: "rgba(255,255,255,0.2)" }}>
+          Il file verra scaricato automaticamente nel tuo browser.
+        </p>
       </section>
     </div>
   );

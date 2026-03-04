@@ -92,8 +92,14 @@ if ($useDocker) {
     Write-Step "docker compose up -d --build"
 
     try {
-        & docker compose up -d --build
-        if ($LASTEXITCODE -ne 0) { throw "docker compose fallito (exit code $LASTEXITCODE)" }
+        # Timestamp usato come CACHEBUST: invalida il layer COPY/build del frontend
+        # mantenendo la cache di npm install (molto più veloce)
+        $cacheBust = (Get-Date -Format "yyyyMMddHHmmss")
+        Write-Step "Build frontend (cache-bust: $cacheBust)..."
+        & docker compose build --build-arg "CACHEBUST=$cacheBust" frontend
+        if ($LASTEXITCODE -ne 0) { throw "docker compose build frontend fallito (exit code $LASTEXITCODE)" }
+        & docker compose up -d --force-recreate
+        if ($LASTEXITCODE -ne 0) { throw "docker compose up fallito (exit code $LASTEXITCODE)" }
     } catch {
         Write-Err "Errore docker compose: $_"
         Write-Warn "Assicurati che Docker Desktop sia avviato e riprova."
@@ -168,7 +174,9 @@ else {
     $nodeModules = Join-Path $PSScriptRoot "frontend\node_modules"
     if (-not (Test-Path $nodeModules)) {
         Write-Warn "Prima installazione dipendenze frontend (può richiedere qualche minuto)..."
-        & npm install --prefix (Join-Path $PSScriptRoot "frontend")
+        # Chiamato tramite cmd per evitare conflitti con Set-StrictMode e npm.ps1
+        $frontendDir = Join-Path $PSScriptRoot "frontend"
+        & cmd /c "npm" "install" "--prefix" $frontendDir
         if ($LASTEXITCODE -ne 0) {
             Write-Err "npm install fallito."
             Read-Host "`n  Premi INVIO per uscire"

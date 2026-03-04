@@ -27,9 +27,15 @@ export const tournamentApi = {
   getStandings: (id: string, gender: string) => api.get(`/api/tournaments/${id}/standings/${gender}`).then((r) => r.data),
   getScorers: (id: string, gender?: string) =>
     api.get(`/api/tournaments/${id}/standings/scorers`, { params: { gender } }).then((r) => r.data),
+  mergeScorers: (id: string, data: { team_id: string; canonical_name: string; aliases: string[] }) =>
+    api.post(`/api/tournaments/${id}/standings/scorers/merge`, data).then((r) => r.data),
   getBracket: (id: string, gender: string) => api.get(`/api/tournaments/${id}/bracket/${gender}`).then((r) => r.data),
-  generateBracket: (id: string, gender: string) =>
-    api.post(`/api/tournaments/${id}/bracket/${gender}`).then((r) => r.data),
+  getBracketTeams: (id: string, gender: string) =>
+    api.get(`/api/tournaments/${id}/bracket/${gender}/teams`).then((r) => r.data),
+  generateBracket: (id: string, gender: string, force = false) =>
+    api.post(`/api/tournaments/${id}/bracket/${gender}`, null, { params: { force } }).then((r) => r.data),
+  generateBracketManual: (id: string, gender: string, teamIds: string[]) =>
+    api.post(`/api/tournaments/${id}/bracket/${gender}/manual`, { team_ids: teamIds }).then((r) => r.data),
   advanceBracket: (id: string, gender: string, matchId: string, winnerTeamId: string) =>
     api.post(`/api/tournaments/${id}/bracket/${gender}/advance`, { match_id: matchId, winner_team_id: winnerTeamId }).then((r) => r.data),
   exportCsv: (id: string, params?: { gender?: "M" | "F"; team_id?: string; day_id?: string }) =>

@@ -30,7 +30,7 @@ class TournamentScheduler:
         self,
         config: Dict,
         on_progress: Optional[Callable[[Dict], None]] = None,
-        max_time_seconds: int = 300,
+        max_time_seconds: int = 30,
     ):
         self.config = config
         self.on_progress = on_progress or (lambda _: None)
@@ -151,14 +151,13 @@ class TournamentScheduler:
                 vars3 = team_slots_vars.get((tid_str, s3), [])
                 
                 if vars1 and vars2 and vars3:
-                    # If team plays in ALL THREE slots -> Penalty
-                    # We need a var that is 1 if (sum(vars1)==1 AND sum(vars2)==1 AND sum(vars3)==1)
-                    # Since at_most_one is enforced per slot, sum(vars) is a bool
-                    v1 = sum(vars1)
-                    v2 = sum(vars2)
-                    v3 = sum(vars3)
+                    # If team plays in ALL THREE consecutive slots -> Penalty
+                    # Each sum is 0 or 1 (at_most_one enforced per slot globally)
+                    # triple = 1  iff  sum(vars1) + sum(vars2) + sum(vars3) == 3
+                    total = sum(vars1) + sum(vars2) + sum(vars3)
                     triple = model.new_bool_var(f"triple_{tid_str}_{i}")
-                    model.add_conjunction([v1, v2, v3]).only_enforce_if(triple)
+                    model.add(total == 3).only_enforce_if(triple)
+                    model.add(total < 3).only_enforce_if(triple.Not())
                     penalty_terms.append(triple * weights.get("three_consecutive_penalty", 50))
 
         for match in matches:
@@ -176,6 +175,7 @@ class TournamentScheduler:
         # ── Solve ─────────────────────────────────────────────────────────────
         solver = cp_model.CpSolver()
         solver.parameters.max_time_in_seconds = self.max_time_seconds
+        solver.parameters.absolute_gap_limit = 1.0  # stop when within 1 unit of optimal
         solver.parameters.log_search_progress = False
 
         callback = SolverProgressCallback(self.on_progress)

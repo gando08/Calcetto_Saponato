@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -11,6 +12,13 @@ from app.services.standings_calculator import calculate_standings
 
 router = APIRouter(prefix="/api/tournaments", tags=["standings"])
 
+
+def _normalize_player_name(name: str) -> str:
+    """Normalize to Title Case, collapsing extra whitespace."""
+    return " ".join(name.strip().split()).title()
+
+
+# ── Scorers ranking ────────────────────────────────────────────────────────
 
 @router.get("/{tid}/standings/scorers")
 def get_scorers(tid: str, gender: str | None = None, db: Session = Depends(get_db)) -> list:
@@ -27,12 +35,13 @@ def get_scorers(tid: str, gender: str | None = None, db: Session = Depends(get_d
     team_ids = {goal.attributed_to_team_id for goal in goals}
     teams = db.query(Team).filter(Team.id.in_(team_ids)).all() if team_ids else []
     teams_by_id = {team.id: team for team in teams}
-    scorers = {}
+
+    scorers: dict[tuple[str, str], int] = {}
     for goal in goals:
-        key = goal.player_name_free or (goal.player.name if goal.player else "Sconosciuto")
-        team_id = goal.attributed_to_team_id
-        pair = (key, team_id)
-        scorers[pair] = scorers.get(pair, 0) + 1
+        raw_name = goal.player_name_free or (goal.player.name if goal.player else "Sconosciuto")
+        # Always group case-insensitively: normalize for keying, keep Title Case display
+        key = (_normalize_player_name(raw_name), goal.attributed_to_team_id)
+        scorers[key] = scorers.get(key, 0) + 1
 
     result = []
     for (name, team_id), goals_count in sorted(scorers.items(), key=lambda item: -item[1]):
@@ -43,12 +52,61 @@ def get_scorers(tid: str, gender: str | None = None, db: Session = Depends(get_d
             {
                 "player": name,
                 "team": team.name if team else "?",
+                "team_id": team_id,
                 "team_gender": team.gender if team else "?",
                 "goals": goals_count,
             }
         )
     return result
 
+
+# ── Merge scorer aliases ───────────────────────────────────────────────────
+
+class MergeScorersPayload(BaseModel):
+    team_id: str
+    canonical_name: str        # the name to keep
+    aliases: list[str]         # names to replace (including canonical if present)
+
+
+@router.post("/{tid}/standings/scorers/merge")
+def merge_scorers(tid: str, payload: MergeScorersPayload, db: Session = Depends(get_db)) -> dict:
+    """
+    Rename all GoalEvent records for the given team whose player_name_free matches
+    any of the provided aliases (case-insensitive) to canonical_name (Title Case).
+    """
+    canonical = _normalize_player_name(payload.canonical_name)
+    if not canonical:
+        raise HTTPException(400, "canonical_name non può essere vuoto")
+
+    # Normalise aliases for case-insensitive comparison
+    alias_set = {_normalize_player_name(a) for a in payload.aliases if a.strip()}
+    if not alias_set:
+        raise HTTPException(400, "Fornire almeno un alias da unificare")
+
+    # All GoalEvents in this tournament for the team
+    goals = (
+        db.query(GoalEvent)
+        .join(Match, GoalEvent.match_id == Match.id)
+        .join(Group, Match.group_id == Group.id)
+        .filter(
+            Group.tournament_id == tid,
+            GoalEvent.attributed_to_team_id == payload.team_id,
+        )
+        .all()
+    )
+
+    updated = 0
+    for goal in goals:
+        raw = goal.player_name_free or (goal.player.name if goal.player else "")
+        if _normalize_player_name(raw) in alias_set:
+            goal.player_name_free = canonical
+            updated += 1
+
+    db.commit()
+    return {"ok": True, "updated": updated, "canonical_name": canonical}
+
+
+# ── Group-phase standings ──────────────────────────────────────────────────
 
 @router.get("/{tid}/standings/{gender}")
 def get_standings(tid: str, gender: str, db: Session = Depends(get_db)) -> list:

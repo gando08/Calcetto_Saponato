@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { useQuery } from "@tanstack/react-query";
-import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { tournamentApi } from "../api/client";
 import { useTournamentStore } from "../store/tournament";
@@ -34,18 +34,137 @@ function statusProgress(status: string) {
 }
 
 function levelBadge(level: "ok" | "soft" | "hard") {
-  if (level === "hard") return { icon: "🔴", label: "hard", className: "bg-red-100 text-red-700 border-red-300" };
-  if (level === "soft") return { icon: "🟡", label: "soft", className: "bg-amber-100 text-amber-700 border-amber-300" };
-  return { icon: "🟢", label: "ok", className: "bg-emerald-100 text-emerald-700 border-emerald-300" };
+  if (level === "hard") return { dot: "#ef4444", label: "Hard violation", cls: "sport-badge-red" };
+  if (level === "soft") return { dot: "#f59e0b", label: "Soft violation", cls: "sport-badge-orange" };
+  return { dot: "#00e676", label: "OK", cls: "sport-badge-neon" };
 }
 
-function KpiCard({ title, value, subtitle }: { title: string; value: string; subtitle: string }) {
+function KpiCard({
+  title,
+  value,
+  subtitle,
+  accent,
+  icon,
+}: {
+  title: string;
+  value: string;
+  subtitle: string;
+  accent: "neon" | "blue" | "orange" | "gold";
+  icon: React.ReactNode;
+}) {
+  const accentColor = {
+    neon: "#00e676",
+    blue: "#3b82f6",
+    orange: "#f97316",
+    gold: "#f59e0b",
+  }[accent];
+  const accentGlow = {
+    neon: "rgba(0,230,118,0.12)",
+    blue: "rgba(59,130,246,0.12)",
+    orange: "rgba(249,115,22,0.12)",
+    gold: "rgba(245,158,11,0.12)",
+  }[accent];
+
   return (
-    <article className="rounded-xl border border-[var(--card-border)] bg-[var(--card-bg)] p-4 shadow-sm">
-      <div className="text-xs uppercase tracking-wide text-slate-500">{title}</div>
-      <div className="mt-2 text-3xl font-extrabold text-[#102a43]">{value}</div>
-      <div className="mt-1 text-sm text-slate-600">{subtitle}</div>
-    </article>
+    <div className="sport-card p-5 flex flex-col gap-3">
+      <div className="flex items-start justify-between">
+        <div
+          className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+          style={{ background: accentGlow, border: `1px solid ${accentColor}30`, color: accentColor }}
+        >
+          {icon}
+        </div>
+        <div
+          className="text-[10px] font-semibold uppercase tracking-widest px-2 py-1 rounded-full"
+          style={{ background: `${accentColor}15`, color: accentColor }}
+        >
+          KPI
+        </div>
+      </div>
+      <div>
+        <div className="text-xs font-medium uppercase tracking-wider mb-1" style={{ color: "rgba(255,255,255,0.4)" }}>
+          {title}
+        </div>
+        <div
+          className="text-3xl font-bold tabular-nums"
+          style={{ fontFamily: "Rajdhani, sans-serif", color: accentColor }}
+        >
+          {value}
+        </div>
+        <div className="text-xs mt-1" style={{ color: "rgba(255,255,255,0.35)" }}>
+          {subtitle}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LiveMatchCard({ match, isLive, health }: { match: Match; isLive: boolean; health: string }) {
+  const badge = levelBadge(health as "ok" | "soft" | "hard");
+  const genderColor = match.gender?.toUpperCase() === "F" ? "#f472b6" : "#60a5fa";
+  const genderBg = match.gender?.toUpperCase() === "F" ? "rgba(236,72,153,0.12)" : "rgba(59,130,246,0.12)";
+
+  return (
+    <div
+      className={isLive ? "match-card-live" : "sport-card p-4"}
+      style={{ animationDelay: "0ms" }}
+    >
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <div className="flex items-center gap-2">
+          {isLive && (
+            <span className="flex items-center gap-1.5">
+              <span
+                className="w-2 h-2 rounded-full animate-live-dot"
+                style={{ background: "#00e676", boxShadow: "0 0 6px #00e676" }}
+              />
+              <span className="text-xs font-bold" style={{ color: "#00e676" }}>LIVE</span>
+            </span>
+          )}
+          <span
+            className="text-xs font-semibold px-2 py-0.5 rounded-full"
+            style={{ background: genderBg, color: genderColor }}
+          >
+            {match.gender?.toUpperCase()}
+          </span>
+          <span className="text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>
+            {match.group_name || "Finali"}
+          </span>
+        </div>
+        <span className={badge.cls} style={{ fontSize: "10px" }}>
+          {badge.label}
+        </span>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold text-sm truncate" style={{ color: "rgba(255,255,255,0.9)" }}>
+            {match.team_home}
+          </div>
+        </div>
+        <div
+          className="flex-shrink-0 px-3 py-1 rounded-lg text-sm font-bold tabular-nums"
+          style={{
+            background: "rgba(255,255,255,0.06)",
+            color: "rgba(255,255,255,0.9)",
+            fontFamily: "Rajdhani, sans-serif",
+            fontSize: "16px",
+          }}
+        >
+          {match.result ? `${match.result.goals_home} - ${match.result.goals_away}` : "vs"}
+        </div>
+        <div className="flex-1 min-w-0 text-right">
+          <div className="font-semibold text-sm truncate" style={{ color: "rgba(255,255,255,0.9)" }}>
+            {match.team_away}
+          </div>
+        </div>
+      </div>
+
+      {match.slot && (
+        <div className="mt-2 text-xs" style={{ color: "rgba(255,255,255,0.3)" }}>
+          {match.slot.start_time} — {match.slot.day_label}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -123,9 +242,9 @@ export function Dashboard() {
       count[key] += 1;
     }
     return [
-      { name: "Da pianificare", value: count.pending },
-      { name: "Schedulate", value: count.scheduled },
-      { name: "Giocate", value: count.played }
+      { name: "Da pianif.", value: count.pending, color: "rgba(255,255,255,0.2)" },
+      { name: "Schedulate", value: count.scheduled, color: "#3b82f6" },
+      { name: "Giocate", value: count.played, color: "#00e676" }
     ];
   }, [matches]);
 
@@ -160,18 +279,38 @@ export function Dashboard() {
   const alerts = quality?.alerts || [];
   const matchHealth = quality?.match_health || {};
 
-  return (
-    <div className="space-y-6">
-      <header className="rounded-2xl border border-[#bcccdc] bg-white/80 p-5 shadow-sm">
-        <h1 className="text-2xl md:text-3xl font-extrabold text-[#102a43]">Dashboard</h1>
-        <p className="text-slate-600 mt-1">KPI operativi, timeline giornata, alert violazioni e stato del solver.</p>
-      </header>
+  const totalMatches = matches.length;
+  const playedMatches = matches.filter((m) => normalizeStatus(m.status) === "played").length;
 
-      <section className="rounded-2xl border border-[#bcccdc] bg-white/80 p-4 shadow-sm flex flex-wrap gap-3 items-end">
-        <label className="flex flex-col gap-1">
-          <span className="text-xs uppercase tracking-wide text-slate-500">Torneo attivo</span>
+  const solverColor =
+    solverStatus === "running" ? "#3b82f6"
+    : solverStatus === "error" || solverStatus === "infeasible" ? "#ef4444"
+    : solverStatus === "done" || solverStatus === "optimal" ? "#00e676"
+    : "rgba(255,255,255,0.2)";
+
+  return (
+    <div className="space-y-6 pb-20 md:pb-0">
+      {/* Page header */}
+      <header className="flex flex-col sm:flex-row sm:items-end gap-4">
+        <div className="flex-1">
+          <div className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ color: "#00e676" }}>
+            Torneo Calcetto Saponato
+          </div>
+          <h1 style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "clamp(28px, 4vw, 40px)", fontWeight: 800, letterSpacing: "0.01em" }}>
+            Dashboard
+          </h1>
+          <p className="text-sm mt-0.5" style={{ color: "rgba(255,255,255,0.4)" }}>
+            KPI operativi · Timeline · Alert violazioni · Stato solver
+          </p>
+        </div>
+
+        {/* Tournament selector */}
+        <div className="flex flex-col gap-1">
+          <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "rgba(255,255,255,0.35)" }}>
+            Torneo attivo
+          </span>
           <select
-            className="border border-slate-300 rounded-lg px-3 py-2 min-w-64 bg-white"
+            className="sport-select min-w-52"
             value={current?.id || ""}
             onChange={(e) => {
               const selected = (tournamentsQuery.data || []).find((t: { id: string }) => t.id === e.target.value);
@@ -179,117 +318,289 @@ export function Dashboard() {
             }}
           >
             {(tournamentsQuery.data || []).map((t: { id: string; name: string }) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
+              <option key={t.id} value={t.id}>{t.name}</option>
             ))}
           </select>
-        </label>
-      </section>
+        </div>
+      </header>
 
       {!tid ? (
-        <div className="rounded-xl border border-[#bcccdc] bg-white p-4 text-slate-600">Crea o seleziona un torneo per caricare la dashboard.</div>
+        <div className="sport-card p-8 text-center" style={{ color: "rgba(255,255,255,0.4)" }}>
+          <div className="text-3xl mb-3">⚽</div>
+          <div className="font-semibold">Nessun torneo selezionato</div>
+          <div className="text-sm mt-1">Crea o seleziona un torneo per caricare la dashboard.</div>
+        </div>
       ) : (
         <>
-          <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <KpiCard title="Preferenze rispettate" value={`${preferencePct}%`} subtitle={`${quality?.preference_respected ?? 0}/${quality?.preference_checks ?? 0} check`} />
-            <KpiCard title="Violazioni hard/soft" value={`${hardViolations} / ${softViolations}`} subtitle="hard + soft constraints" />
-            <KpiCard title="Slot utilizzati" value={`${utilized} / ${totalSlots}`} subtitle={`${quality?.coverage_pct ?? 0}% copertura calendario`} />
-            <KpiCard title="Indice equita" value={equityIndex.toFixed(2)} subtitle="distribuzione partite per team" />
+          {/* KPI cards */}
+          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <KpiCard
+              title="Preferenze rispettate"
+              value={`${preferencePct}%`}
+              subtitle={`${quality?.preference_respected ?? 0} / ${quality?.preference_checks ?? 0} check`}
+              accent="neon"
+              icon={
+                <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              }
+            />
+            <KpiCard
+              title="Violazioni hard / soft"
+              value={`${hardViolations} / ${softViolations}`}
+              subtitle="constraint violations"
+              accent={hardViolations > 0 ? "orange" : "neon"}
+              icon={
+                <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                  <line x1="12" y1="9" x2="12" y2="13" />
+                  <line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+              }
+            />
+            <KpiCard
+              title="Slot utilizzati"
+              value={`${utilized} / ${totalSlots}`}
+              subtitle={`${quality?.coverage_pct ?? 0}% copertura calendario`}
+              accent="blue"
+              icon={
+                <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <rect x="3" y="4" width="18" height="18" rx="2" />
+                  <line x1="16" y1="2" x2="16" y2="6" />
+                  <line x1="8" y1="2" x2="8" y2="6" />
+                  <line x1="3" y1="10" x2="21" y2="10" />
+                </svg>
+              }
+            />
+            <KpiCard
+              title="Indice equità"
+              value={equityIndex.toFixed(2)}
+              subtitle="distribuzione partite per team"
+              accent="gold"
+              icon={
+                <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <line x1="18" y1="20" x2="18" y2="10" />
+                  <line x1="12" y1="20" x2="12" y2="4" />
+                  <line x1="6" y1="20" x2="6" y2="14" />
+                </svg>
+              }
+            />
           </section>
 
-          <section className="grid gap-4 xl:grid-cols-3">
-            <article className="xl:col-span-2 rounded-2xl border border-[#bcccdc] bg-white/90 p-4 shadow-sm">
-              <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                <h2 className="text-lg font-bold text-[#102a43]">Timeline Giorno Corrente</h2>
-                <span className="text-xs text-slate-500">{timelineContext.targetDate || "Nessuna data disponibile"}</span>
+          {/* Match progress bar */}
+          {totalMatches > 0 && (
+            <section className="sport-card p-5">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <div className="text-xs uppercase tracking-widest font-semibold mb-0.5" style={{ color: "rgba(255,255,255,0.4)" }}>
+                    Progresso torneo
+                  </div>
+                  <div className="text-lg font-bold" style={{ fontFamily: "Rajdhani, sans-serif" }}>
+                    {playedMatches} <span style={{ color: "rgba(255,255,255,0.35)" }}>/ {totalMatches} partite giocate</span>
+                  </div>
+                </div>
+                <div
+                  className="text-2xl font-bold tabular-nums"
+                  style={{ fontFamily: "Rajdhani, sans-serif", color: "#00e676" }}
+                >
+                  {totalMatches > 0 ? Math.round((playedMatches / totalMatches) * 100) : 0}%
+                </div>
               </div>
+              <div className="sport-progress-track">
+                <div
+                  className="sport-progress-fill animate-progress"
+                  style={{ width: `${totalMatches > 0 ? (playedMatches / totalMatches) * 100 : 0}%` }}
+                />
+              </div>
+            </section>
+          )}
+
+          {/* Timeline + Chart */}
+          <section className="grid gap-4 xl:grid-cols-3">
+            {/* Timeline */}
+            <div className="xl:col-span-2 sport-card p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold" style={{ fontFamily: "Rajdhani, sans-serif" }}>
+                  Timeline Giornata
+                </h2>
+                <span className="text-xs px-2.5 py-1 rounded-full" style={{ background: "rgba(255,255,255,0.07)", color: "rgba(255,255,255,0.5)" }}>
+                  {timelineContext.targetDate || "—"}
+                </span>
+              </div>
+
               {timelineContext.rows.length === 0 ? (
-                <div className="text-sm text-slate-500">Nessuna partita schedulata per la giornata corrente.</div>
+                <div className="text-sm py-6 text-center" style={{ color: "rgba(255,255,255,0.3)" }}>
+                  Nessuna partita schedulata per la giornata corrente.
+                </div>
               ) : (
                 <div className="space-y-2">
-                  {timelineContext.rows.map(({ match, isLive }) => {
-                    const health = matchHealth[match.id]?.level || "ok";
-                    const badge = levelBadge(health);
-                    return (
-                      <div
-                        key={match.id}
-                        className={`rounded-lg border px-3 py-2 flex items-center justify-between gap-3 ${
-                          isLive ? "border-emerald-400 bg-emerald-50" : "border-slate-200 bg-white"
-                        }`}
-                      >
-                        <div>
-                          <div className="text-sm font-semibold text-[#102a43]">
-                            {match.slot?.start_time} - {match.team_home} vs {match.team_away}
-                          </div>
-                          <div className="text-xs text-slate-500">
-                            [{(match.gender || "").toUpperCase()} - {match.group_name || "Finali"}] {isLive ? "• LIVE" : ""}
-                          </div>
-                        </div>
-                        <span className={`text-xs border rounded-full px-2 py-1 ${badge.className}`}>
-                          {badge.icon} {badge.label}
-                        </span>
-                      </div>
-                    );
-                  })}
+                  {timelineContext.rows.map(({ match, isLive }) => (
+                    <LiveMatchCard
+                      key={match.id}
+                      match={match}
+                      isLive={isLive}
+                      health={matchHealth[match.id]?.level || "ok"}
+                    />
+                  ))}
                 </div>
               )}
-            </article>
+            </div>
 
-            <article className="rounded-2xl border border-[#bcccdc] bg-white/90 p-4 shadow-sm">
-              <h2 className="text-lg font-bold text-[#102a43] mb-3">Distribuzione Match</h2>
+            {/* Bar chart */}
+            <div className="sport-card p-5">
+              <h2 className="text-lg font-bold mb-4" style={{ fontFamily: "Rajdhani, sans-serif" }}>
+                Distribuzione Match
+              </h2>
               <div className="h-52">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={statusSeries}>
-                    <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                    <YAxis allowDecimals={false} />
-                    <Tooltip />
-                    <Bar dataKey="value" fill="#3f83f8" radius={[6, 6, 0, 0]} />
+                  <BarChart data={statusSeries} barSize={36}>
+                    <XAxis
+                      dataKey="name"
+                      tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      allowDecimals={false}
+                      tick={{ fill: "rgba(255,255,255,0.3)", fontSize: 10 }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        background: "#1a2340",
+                        border: "1px solid rgba(255,255,255,0.1)",
+                        borderRadius: "10px",
+                        color: "#fff",
+                        fontSize: "12px",
+                      }}
+                      cursor={{ fill: "rgba(255,255,255,0.04)" }}
+                    />
+                    <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+                      {statusSeries.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-            </article>
+            </div>
           </section>
 
+          {/* Alerts + Solver */}
           <section className="grid gap-4 xl:grid-cols-2">
-            <article className="rounded-2xl border border-[#bcccdc] bg-white/90 p-4 shadow-sm">
-              <h2 className="text-lg font-bold text-[#102a43] mb-3">Alert Violazioni Soft</h2>
+            {/* Alerts */}
+            <div className="sport-card p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <h2 className="text-lg font-bold" style={{ fontFamily: "Rajdhani, sans-serif" }}>
+                  Alert Violazioni
+                </h2>
+                {alerts.length > 0 && (
+                  <span
+                    className="text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center"
+                    style={{ background: "rgba(249,115,22,0.2)", color: "#fb923c" }}
+                  >
+                    {alerts.length}
+                  </span>
+                )}
+              </div>
               {alerts.length === 0 ? (
-                <div className="text-sm text-slate-500">Nessuna violazione soft rilevata.</div>
+                <div className="flex items-center gap-3 py-4">
+                  <div
+                    className="w-8 h-8 rounded-full flex items-center justify-center"
+                    style={{ background: "rgba(0,230,118,0.1)" }}
+                  >
+                    <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#00e676" strokeWidth={2.5}>
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  </div>
+                  <span className="text-sm" style={{ color: "rgba(255,255,255,0.4)" }}>
+                    Nessuna violazione soft rilevata.
+                  </span>
+                </div>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-2 max-h-64 overflow-y-auto">
                   {alerts.map((alert) => (
-                    <div key={`${alert.match_id}-${alert.message}`} className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
-                      <div className="text-sm font-semibold text-amber-900">{alert.message}</div>
-                      <div className="text-xs text-amber-800">{alert.reasons.join(" • ")}</div>
-                      <a className="text-xs underline text-amber-900" href={`/schedule#match-${alert.match_id}`}>
-                        Vai al match
+                    <div
+                      key={`${alert.match_id}-${alert.message}`}
+                      className="rounded-xl p-3"
+                      style={{
+                        background: "rgba(245,158,11,0.08)",
+                        border: "1px solid rgba(245,158,11,0.2)",
+                      }}
+                    >
+                      <div className="text-sm font-semibold" style={{ color: "#fcd34d" }}>
+                        {alert.message}
+                      </div>
+                      <div className="text-xs mt-1" style={{ color: "rgba(255,255,255,0.4)" }}>
+                        {alert.reasons.join(" · ")}
+                      </div>
+                      <a
+                        className="text-xs mt-1 inline-block underline"
+                        style={{ color: "#f59e0b" }}
+                        href={`/schedule#match-${alert.match_id}`}
+                      >
+                        Vai al match →
                       </a>
                     </div>
                   ))}
                 </div>
               )}
-            </article>
+            </div>
 
-            <article className="rounded-2xl border border-[#bcccdc] bg-white/90 p-4 shadow-sm">
-              <h2 className="text-lg font-bold text-[#102a43] mb-3">Stato Solver</h2>
-              <div className="text-sm text-slate-700 mb-2">
-                Stato: <strong>{solverStatus}</strong> {solverObjective !== null ? `• objective ${solverObjective}` : ""}
-              </div>
-              <div className="h-3 rounded-full bg-slate-200 overflow-hidden">
+            {/* Solver status */}
+            <div className="sport-card p-5">
+              <h2 className="text-lg font-bold mb-4" style={{ fontFamily: "Rajdhani, sans-serif" }}>
+                Stato Solver
+              </h2>
+
+              <div className="flex items-center gap-3 mb-4">
                 <div
-                  className={`h-3 ${solverStatus === "running" ? "bg-blue-500 animate-pulse" : solverStatus === "error" ? "bg-red-500" : "bg-emerald-500"}`}
-                  style={{ width: `${progress}%` }}
+                  className="w-3 h-3 rounded-full flex-shrink-0"
+                  style={{
+                    background: solverColor,
+                    boxShadow: `0 0 8px ${solverColor}`,
+                    animation: solverStatus === "running" ? "liveDot 1.4s ease-in-out infinite" : "none",
+                  }}
+                />
+                <div>
+                  <span
+                    className="text-base font-bold uppercase tracking-wide"
+                    style={{ fontFamily: "Rajdhani, sans-serif", color: solverColor }}
+                  >
+                    {solverStatus}
+                  </span>
+                  {solverObjective !== null && (
+                    <span className="text-xs ml-2" style={{ color: "rgba(255,255,255,0.35)" }}>
+                      objective: {solverObjective}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="sport-progress-track mb-2">
+                <div
+                  className="rounded-full h-full transition-all duration-700 ease-out"
+                  style={{
+                    width: `${progress}%`,
+                    background: `linear-gradient(90deg, ${solverColor}, ${solverColor}99)`,
+                    animation: solverStatus === "running" ? "pulseNeon 2.5s ease-in-out infinite" : "none",
+                  }}
                 />
               </div>
-              <div className="mt-2 text-xs text-slate-500">
+
+              <div className="text-xs mt-3" style={{ color: "rgba(255,255,255,0.35)" }}>
                 {solverStatus === "running"
-                  ? "Il solver sta cercando la migliore assegnazione."
+                  ? "Il solver sta cercando la migliore assegnazione degli slot..."
                   : solverStatus === "idle"
-                    ? "Nessuna esecuzione attiva."
-                    : "Esecuzione terminata."}
+                    ? "Nessuna esecuzione attiva. Vai al Calendario per generare."
+                    : solverStatus === "done" || solverStatus === "optimal"
+                      ? "Esecuzione completata con successo."
+                      : solverStatus === "error" || solverStatus === "infeasible"
+                        ? "Esecuzione terminata con errore."
+                        : "Stato non disponibile."}
               </div>
-            </article>
+            </div>
           </section>
         </>
       )}

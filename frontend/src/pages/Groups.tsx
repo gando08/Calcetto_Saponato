@@ -9,11 +9,11 @@ import { useTournamentStore } from "../store/tournament";
 import type { CompatibilityBlock, GroupSummary, GroupTeamSummary, Tournament } from "../types";
 import { buildTournamentPairs, getTournamentIdForGender } from "../utils/tournamentPairs";
 
-function heatmapClass(value: number | undefined) {
-  if (typeof value !== "number") return "bg-slate-100 text-slate-500";
-  if (value < 55) return "bg-red-100 text-red-700";
-  if (value < 80) return "bg-amber-100 text-amber-700";
-  return "bg-emerald-100 text-emerald-700";
+function heatmapStyle(value: number | undefined): React.CSSProperties {
+  if (typeof value !== "number") return { background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.3)" };
+  if (value < 55) return { background: "rgba(239,68,68,0.15)", color: "#f87171" };
+  if (value < 80) return { background: "rgba(245,158,11,0.15)", color: "#fbbf24" };
+  return { background: "rgba(0,230,118,0.12)", color: "#00e676" };
 }
 
 function TeamChip({ team, disabled }: { team: GroupTeamSummary; disabled: boolean }) {
@@ -29,13 +29,29 @@ function TeamChip({ team, disabled }: { team: GroupTeamSummary; disabled: boolea
         transform
           ? {
               transform: CSS.Translate.toString(transform),
-              opacity: isDragging ? 0.6 : 1
+              opacity: isDragging ? 0.5 : 1,
+              zIndex: isDragging ? 999 : undefined
             }
           : undefined
       }
       {...attributes}
       {...listeners}
-      className={`rounded-lg border bg-white px-2 py-1 text-sm ${disabled ? "cursor-default" : "cursor-grab"}`}
+      className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-all duration-150 select-none ${
+        disabled ? "cursor-default" : "cursor-grab active:cursor-grabbing"
+      } ${isDragging ? "ring-2 ring-offset-1 ring-offset-transparent" : ""}`}
+      style={{
+        ...(transform
+          ? {
+              transform: CSS.Translate.toString(transform),
+              opacity: isDragging ? 0.5 : 1,
+              zIndex: isDragging ? 999 : undefined
+            }
+          : undefined),
+        background: isDragging ? "rgba(0,230,118,0.2)" : "rgba(255,255,255,0.06)",
+        border: isDragging ? "1px solid rgba(0,230,118,0.5)" : "1px solid rgba(255,255,255,0.1)",
+        color: isDragging ? "#00e676" : "rgba(255,255,255,0.85)",
+        boxShadow: isDragging ? "0 4px 16px rgba(0,230,118,0.2)" : undefined
+      }}
     >
       {team.name}
     </div>
@@ -54,19 +70,40 @@ function GroupDropZone({
   return (
     <article
       ref={setNodeRef}
-      className={`rounded-xl border p-3 space-y-3 ${
-        isOver ? "border-slate-900 bg-slate-100" : "border-slate-200 bg-slate-50"
-      }`}
+      className="rounded-xl p-4 space-y-3 transition-all duration-200"
+      style={{
+        background: isOver ? "rgba(0,230,118,0.07)" : "rgba(255,255,255,0.03)",
+        border: isOver ? "1px solid rgba(0,230,118,0.4)" : "1px solid rgba(255,255,255,0.07)",
+        boxShadow: isOver ? "0 0 20px rgba(0,230,118,0.1)" : undefined
+      }}
     >
       <div className="flex items-center justify-between">
-        <h3 className="font-semibold">{group.name}</h3>
-        <span className="rounded bg-white border px-2 py-0.5 text-xs">{group.teams.length} squadre</span>
+        <h3
+          className="font-bold text-base"
+          style={{ fontFamily: "Rajdhani, sans-serif", letterSpacing: "0.04em", color: isOver ? "#00e676" : "rgba(255,255,255,0.9)" }}
+        >
+          {group.name}
+        </h3>
+        <span
+          className="rounded-lg px-2 py-0.5 text-xs font-semibold"
+          style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.5)", border: "1px solid rgba(255,255,255,0.08)" }}
+        >
+          {group.teams.length} sq.
+        </span>
       </div>
 
-      <div className="space-y-2 min-h-20">
+      <div className="space-y-1.5 min-h-20">
         {group.teams.map((team) => (
           <TeamChip key={team.id} team={team} disabled={disabled} />
         ))}
+        {group.teams.length === 0 && (
+          <div
+            className="rounded-lg py-4 text-center text-xs"
+            style={{ color: "rgba(255,255,255,0.2)", border: "1px dashed rgba(255,255,255,0.1)" }}
+          >
+            {disabled ? "Nessuna squadra" : "Trascina qui"}
+          </div>
+        )}
       </div>
     </article>
   );
@@ -75,39 +112,46 @@ function GroupDropZone({
 function CompatibilityTable({ block }: { block: CompatibilityBlock }) {
   const teams = block.teams || [];
   if (teams.length === 0) {
-    return <div className="text-sm text-slate-500">Nessuna matrice disponibile per questo genere.</div>;
+    return <div className="text-sm" style={{ color: "rgba(255,255,255,0.3)" }}>Nessuna matrice disponibile per questo genere.</div>;
   }
 
   return (
-    <div className="overflow-x-auto rounded-lg border">
+    <div className="overflow-x-auto rounded-xl" style={{ border: "1px solid rgba(255,255,255,0.07)" }}>
       <table className="min-w-full text-xs">
-        <thead className="bg-slate-100">
-          <tr>
-            <th className="px-2 py-1 text-left">Squadra</th>
+        <thead>
+          <tr style={{ background: "rgba(255,255,255,0.04)", borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+            <th className="px-3 py-2 text-left font-semibold" style={{ color: "rgba(255,255,255,0.4)", letterSpacing: "0.06em" }}>
+              SQUADRA
+            </th>
             {teams.map((team) => (
-              <th key={team.id} className="px-2 py-1 text-left whitespace-nowrap">
+              <th key={team.id} className="px-3 py-2 text-left font-semibold whitespace-nowrap" style={{ color: "rgba(255,255,255,0.4)", letterSpacing: "0.06em" }}>
                 {team.name}
               </th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {teams.map((rowTeam) => (
-            <tr key={rowTeam.id} className="border-t">
-              <td className="px-2 py-1 font-medium">{rowTeam.name}</td>
+          {teams.map((rowTeam, rowIdx) => (
+            <tr key={rowTeam.id} style={{ borderTop: rowIdx > 0 ? "1px solid rgba(255,255,255,0.04)" : undefined }}>
+              <td className="px-3 py-2 font-semibold whitespace-nowrap" style={{ color: "rgba(255,255,255,0.7)" }}>
+                {rowTeam.name}
+              </td>
               {teams.map((colTeam) => {
                 if (rowTeam.id === colTeam.id) {
                   return (
-                    <td key={colTeam.id} className="px-2 py-1 text-slate-400">
-                      -
+                    <td key={colTeam.id} className="px-3 py-2 text-center" style={{ color: "rgba(255,255,255,0.15)" }}>
+                      —
                     </td>
                   );
                 }
                 const value = block.matrix?.[rowTeam.id]?.[colTeam.id];
                 return (
-                  <td key={colTeam.id} className="px-2 py-1">
-                    <span className={`rounded px-1.5 py-0.5 ${heatmapClass(value)}`}>
-                      {typeof value === "number" ? `${value}%` : "-"}
+                  <td key={colTeam.id} className="px-3 py-2">
+                    <span
+                      className="rounded-lg px-2 py-0.5 font-semibold"
+                      style={heatmapStyle(value)}
+                    >
+                      {typeof value === "number" ? `${value}%` : "—"}
                     </span>
                   </td>
                 );
@@ -296,20 +340,36 @@ export function Groups() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
+      {/* Page header */}
       <header>
-        <h1 className="text-2xl font-bold">Gironi</h1>
-        <p className="text-sm text-slate-600">Generazione automatica, modifica manuale e matrice di compatibilita oraria.</p>
+        <h1
+          className="text-3xl font-extrabold tracking-tight"
+          style={{ fontFamily: "Rajdhani, sans-serif", color: "rgba(255,255,255,0.95)" }}
+        >
+          Gironi
+        </h1>
+        <p className="text-sm mt-1" style={{ color: "rgba(255,255,255,0.4)" }}>
+          Generazione automatica, modifica manuale e matrice di compatibilita oraria.
+        </p>
       </header>
 
-      {errorMessage ? <div className="rounded-lg border border-red-300 bg-red-100 px-3 py-2 text-red-700 text-sm">{errorMessage}</div> : null}
+      {errorMessage && (
+        <div className="sport-alert-error">{errorMessage}</div>
+      )}
 
-      <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+      {/* Controls */}
+      <section
+        className="rounded-xl p-4 space-y-4"
+        style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}
+      >
         <div className="flex flex-wrap gap-3 items-end">
-          <label className="flex flex-col gap-1">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Coppia tornei M/F</span>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.1em]" style={{ color: "rgba(255,255,255,0.35)" }}>
+              Coppia tornei M/F
+            </span>
             <select
-              className="rounded-lg border px-3 py-2 min-w-64"
+              className="sport-select min-w-56"
               value={selectedPairKey}
               onChange={(event) => {
                 setSelectedPairKey(event.target.value);
@@ -327,16 +387,26 @@ export function Groups() {
 
           <button
             type="button"
-            className="rounded-lg border px-3 py-2"
+            className="sport-btn-secondary"
             onClick={() => void onGenerateGroups()}
             disabled={!tid || generateMutation.isPending}
           >
-            {generateMutation.isPending ? "Generazione..." : "Rigenera"}
+            {generateMutation.isPending ? (
+              <span className="flex items-center gap-2">
+                <svg className="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Generazione...
+              </span>
+            ) : (
+              "Rigenera"
+            )}
           </button>
 
           <button
             type="button"
-            className={`rounded-lg border px-3 py-2 ${manualMode ? "bg-slate-900 text-white border-slate-900" : ""}`}
+            className={manualMode ? "sport-btn-primary" : "sport-btn-secondary"}
             onClick={() => {
               if (manualMode) {
                 cancelManualChanges();
@@ -349,54 +419,113 @@ export function Groups() {
             {manualMode ? "Annulla modifica" : "Modifica manuale"}
           </button>
 
-          {manualMode ? (
+          {manualMode && (
             <button
               type="button"
-              className="rounded-lg bg-slate-900 text-white px-3 py-2 disabled:opacity-50"
+              className="sport-btn-primary"
               onClick={() => void saveManualChanges()}
               disabled={!hasManualChanges || updateTeamsMutation.isPending}
             >
               {updateTeamsMutation.isPending ? "Salvataggio..." : "Salva modifiche"}
             </button>
-          ) : null}
+          )}
         </div>
 
-        <div className="inline-flex rounded-lg border overflow-hidden">
-          <button
-            type="button"
-            className={`px-4 py-2 text-sm ${genderTab === "M" ? "bg-slate-900 text-white" : "bg-white text-slate-700"}`}
-            onClick={() => setGenderTab("M")}
-          >
-            Maschile
-          </button>
-          <button
-            type="button"
-            className={`px-4 py-2 text-sm ${genderTab === "F" ? "bg-slate-900 text-white" : "bg-white text-slate-700"}`}
-            onClick={() => setGenderTab("F")}
-          >
-            Femminile
-          </button>
+        {/* Gender tabs */}
+        <div className="flex gap-1">
+          {(["M", "F"] as const).map((g) => {
+            const isActive = genderTab === g;
+            const color = g === "M" ? "#3b82f6" : "#ec4899";
+            return (
+              <button
+                key={g}
+                type="button"
+                onClick={() => setGenderTab(g)}
+                className="px-5 py-2 rounded-lg text-sm font-semibold transition-all duration-200"
+                style={{
+                  background: isActive ? (g === "M" ? "rgba(59,130,246,0.15)" : "rgba(236,72,153,0.15)") : "rgba(255,255,255,0.04)",
+                  color: isActive ? color : "rgba(255,255,255,0.45)",
+                  border: `1px solid ${isActive ? color + "55" : "rgba(255,255,255,0.08)"}`,
+                  fontFamily: "Rajdhani, sans-serif",
+                  letterSpacing: "0.06em"
+                }}
+              >
+                {g === "M" ? "Maschile" : "Femminile"}
+              </button>
+            );
+          })}
         </div>
 
         {selectedPair ? (
-          <div className="text-xs text-slate-500">
-            Torneo M: {selectedPair.male?.name || "non configurato"} | Torneo F: {selectedPair.female?.name || "non configurato"}
+          <div className="flex items-center gap-2 text-xs flex-wrap">
+            {(["M", "F"] as const).map((g) => {
+              const t = g === "M" ? selectedPair.male : selectedPair.female;
+              const isActive = genderTab === g;
+              const color = g === "M" ? "#60a5fa" : "#f472b6";
+              const label = g === "M" ? "Maschile" : "Femminile";
+              if (!t) {
+                return (
+                  <span key={g} className="px-2.5 py-1 rounded-lg" style={{ background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.25)", border: "1px solid rgba(255,255,255,0.07)" }}>
+                    {label}: <em>non configurato</em>
+                  </span>
+                );
+              }
+              const max = t.max_teams;
+              return (
+                <span key={g} className="px-2.5 py-1 rounded-lg font-medium transition-all"
+                  style={{
+                    background: isActive ? `${color}14` : "rgba(255,255,255,0.04)",
+                    color: isActive ? color : "rgba(255,255,255,0.35)",
+                    border: `1px solid ${isActive ? color + "40" : "rgba(255,255,255,0.07)"}`,
+                  }}>
+                  {g === "M" ? "♂" : "♀"} {label}
+                  {max ? <span className="ml-1.5 font-bold" style={{ opacity: 0.8 }}>· {max} squadre</span> : null}
+                  {isActive && <span className="ml-1.5 font-bold" style={{ color: "#00e676" }}>← attivo</span>}
+                </span>
+              );
+            })}
           </div>
         ) : (
-          <div className="text-xs text-amber-700">Nessuna coppia M/F disponibile. Crea prima i tornei in Configurazione.</div>
+          <div className="sport-alert-warning text-xs">Nessuna edizione disponibile. Crea prima i tornei in Configurazione.</div>
         )}
       </section>
 
-      <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+      {/* Groups grid */}
+      <section
+        className="rounded-xl p-4 space-y-4"
+        style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}
+      >
         <div className="flex items-center justify-between">
-          <h2 className="font-semibold">Gironi auto-generati</h2>
-          {manualMode ? <span className="text-xs text-slate-500">Drag & drop attivo</span> : null}
+          <h2
+            className="font-bold text-sm uppercase tracking-widest"
+            style={{ fontFamily: "Rajdhani, sans-serif", color: "rgba(255,255,255,0.5)", letterSpacing: "0.12em" }}
+          >
+            Gironi auto-generati
+          </h2>
+          {manualMode && (
+            <span
+              className="text-xs font-semibold flex items-center gap-1.5"
+              style={{ color: "#f97316" }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4" />
+              </svg>
+              Drag & drop attivo
+            </span>
+          )}
         </div>
 
         {groupsQuery.isLoading ? (
-          <div className="text-sm text-slate-500">Caricamento gironi...</div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="sport-skeleton rounded-xl h-32" />
+            ))}
+          </div>
         ) : groups.length === 0 ? (
-          <div className="text-sm text-slate-500">Nessun girone disponibile per questo genere.</div>
+          <div className="text-center py-10" style={{ color: "rgba(255,255,255,0.25)" }}>
+            <div className="text-4xl mb-2">⚽</div>
+            <div className="text-sm">Nessun girone disponibile. Clicca Rigenera per generare i gironi.</div>
+          </div>
         ) : (
           <DndContext onDragEnd={onDragEnd}>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -408,8 +537,17 @@ export function Groups() {
         )}
       </section>
 
-      <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
-        <h2 className="font-semibold">Matrice compatibilita oraria</h2>
+      {/* Compatibility matrix */}
+      <section
+        className="rounded-xl p-4 space-y-4"
+        style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}
+      >
+        <h2
+          className="font-bold text-sm uppercase tracking-widest"
+          style={{ fontFamily: "Rajdhani, sans-serif", color: "rgba(255,255,255,0.5)", letterSpacing: "0.12em" }}
+        >
+          Matrice Compatibilita Oraria
+        </h2>
         <CompatibilityTable block={compatibilityBlock} />
       </section>
     </div>

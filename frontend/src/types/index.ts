@@ -98,6 +98,7 @@ export interface StandingRow {
 export interface Scorer {
   player: string;
   team: string;
+  team_id: string;
   team_gender: string;
   goals: number;
 }
@@ -124,6 +125,22 @@ export interface BracketMatch {
   prerequisite_positions?: number[];
   prerequisite_match_home_id?: string | null;
   prerequisite_match_away_id?: string | null;
+}
+
+export interface BracketTeam {
+  team_id: string;
+  team_name: string;
+  group: string;
+  position: number;
+  points: number;
+  played: number;
+  goal_diff: number;
+  goals_for: number;
+  group_complete: boolean;
+  matches_played: number;
+  matches_total: number;
+  is_confirmed_direct: boolean;
+  is_confirmed: boolean;
 }
 
 export interface GroupTeamSummary {

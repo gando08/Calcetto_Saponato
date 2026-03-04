@@ -19,8 +19,13 @@ class QualificationError(ValueError):
     pass
 
 
-def select_finalists(groups: Sequence[Dict[str, Any]], gender: str, tiebreaker_order: Sequence[str]) -> Dict[str, Any]:
-    if not _is_group_phase_closed(groups):
+def select_finalists(
+    groups: Sequence[Dict[str, Any]],
+    gender: str,
+    tiebreaker_order: Sequence[str],
+    force: bool = False,
+) -> Dict[str, Any]:
+    if not force and not _is_group_phase_closed(groups):
         raise QualificationError("Group phase is not closed")
     wildcard_tiebreakers = _normalize_wildcard_tiebreakers(tiebreaker_order)
 

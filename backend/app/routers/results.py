@@ -27,6 +27,11 @@ class GoalCreate(BaseModel):
     attributed_to_team_id: str
 
 
+def _normalize_player_name(name: str) -> str:
+    """Strip extra spaces and apply Title Case so 'mario rossi' == 'Mario Rossi'."""
+    return " ".join(name.strip().split()).title()
+
+
 def _get_match_or_404(mid: str, db: Session) -> Match:
     match = db.query(Match).filter(Match.id == mid).first()
     if not match:
@@ -81,7 +86,7 @@ def add_goal(mid: str, data: GoalCreate, db: Session = Depends(get_db)) -> dict:
     _get_match_or_404(mid, db)
     goal = GoalEvent(
         match_id=mid,
-        player_name_free=data.player_name,
+        player_name_free=_normalize_player_name(data.player_name),
         is_own_goal=data.is_own_goal,
         attributed_to_team_id=data.attributed_to_team_id,
     )

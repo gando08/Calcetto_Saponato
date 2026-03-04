@@ -1,38 +1,394 @@
-@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&family=Sora:wght@400;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Rajdhani:wght@500;600;700&display=swap");
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ─── Root dark theme ─────────────────────────────────────────────────────── */
 :root {
-  --app-bg: #f3f8fc;
-  --app-bg-accent: #e8f1ff;
-  --app-text: #102a43;
-  --app-muted: #486581;
-  --card-bg: #ffffff;
-  --card-border: #d9e2ec;
+  --sport-bg: #080c18;
+  --sport-surface: #0d1224;
+  --sport-card: #111827;
+  --sport-card-hover: #162032;
+  --sport-border: rgba(255, 255, 255, 0.07);
+  --sport-border-accent: rgba(0, 230, 118, 0.35);
+  --sport-neon: #00e676;
+  --sport-neon-dim: #00c853;
+  --sport-neon-glow: rgba(0, 230, 118, 0.15);
+  --sport-blue: #3b82f6;
+  --sport-orange: #f97316;
+  --sport-gold: #f59e0b;
+  --sport-muted: rgba(255, 255, 255, 0.45);
+  --sport-subtle: rgba(255, 255, 255, 0.07);
 }
 
+html,
 body {
   margin: 0;
   min-height: 100vh;
-  color: var(--app-text);
-  font-family: "Manrope", "Segoe UI", sans-serif;
-  background:
-    radial-gradient(900px 420px at -10% -20%, rgba(94, 165, 255, 0.22), transparent 70%),
-    radial-gradient(760px 380px at 110% -10%, rgba(16, 42, 67, 0.1), transparent 70%),
-    linear-gradient(160deg, var(--app-bg), var(--app-bg-accent));
+  background-color: var(--sport-bg);
+  color: #ffffff;
+  font-family: "Inter", "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 h1,
 h2,
 h3,
-h4 {
-  font-family: "Sora", "Manrope", sans-serif;
+h4,
+h5 {
+  font-family: "Rajdhani", "Inter", sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.01em;
 }
 
-.bg-app-surface {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.65), rgba(255, 255, 255, 0.9)),
-    linear-gradient(160deg, var(--app-bg), var(--app-bg-accent));
+/* ─── Scrollbar ───────────────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: var(--sport-surface);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 230, 118, 0.4);
+}
+
+/* ─── Sport component classes ─────────────────────────────────────────────── */
+@layer components {
+  /* Glass card */
+  .sport-card {
+    @apply relative rounded-2xl border overflow-hidden;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%);
+    border-color: var(--sport-border);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5), 0 1px 4px rgba(0, 0, 0, 0.3);
+    transition: box-shadow 0.25s ease, border-color 0.25s ease, transform 0.2s ease;
+  }
+  .sport-card:hover {
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  }
+  .sport-card-interactive {
+    @apply sport-card cursor-pointer;
+  }
+  .sport-card-interactive:hover {
+    transform: translateY(-1px);
+    border-color: rgba(0, 230, 118, 0.25);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(0, 230, 118, 0.1);
+  }
+
+  /* Neon accent card */
+  .sport-card-neon {
+    @apply sport-card;
+    border-color: rgba(0, 230, 118, 0.25);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(0, 230, 118, 0.15);
+  }
+
+  /* Section header */
+  .sport-section-title {
+    @apply text-xs font-semibold uppercase tracking-widest;
+    color: var(--sport-muted);
+  }
+
+  /* KPI value */
+  .sport-kpi-value {
+    font-family: "Rajdhani", sans-serif;
+    @apply font-bold tabular-nums;
+  }
+
+  /* Neon badge */
+  .sport-badge-neon {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold;
+    background: rgba(0, 230, 118, 0.12);
+    color: #00e676;
+    border: 1px solid rgba(0, 230, 118, 0.3);
+  }
+  .sport-badge-blue {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold;
+    background: rgba(59, 130, 246, 0.12);
+    color: #60a5fa;
+    border: 1px solid rgba(59, 130, 246, 0.3);
+  }
+  .sport-badge-orange {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold;
+    background: rgba(249, 115, 22, 0.12);
+    color: #fb923c;
+    border: 1px solid rgba(249, 115, 22, 0.3);
+  }
+  .sport-badge-red {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold;
+    background: rgba(239, 68, 68, 0.12);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+  }
+  .sport-badge-gray {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold;
+    background: rgba(255, 255, 255, 0.07);
+    color: rgba(255, 255, 255, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  /* Button primary */
+  .sport-btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-200;
+    background: linear-gradient(135deg, #00e676, #00c853);
+    color: #080c18;
+    box-shadow: 0 0 0 0 rgba(0, 230, 118, 0);
+  }
+  .sport-btn-primary:hover:not(:disabled) {
+    box-shadow: 0 0 20px rgba(0, 230, 118, 0.4);
+    transform: translateY(-1px);
+  }
+  .sport-btn-primary:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  /* Button secondary */
+  .sport-btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-200;
+    background: rgba(255, 255, 255, 0.07);
+    color: rgba(255, 255, 255, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  .sport-btn-secondary:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.11);
+    border-color: rgba(255, 255, 255, 0.18);
+  }
+  .sport-btn-secondary:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  /* Button danger */
+  .sport-btn-danger {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-200;
+    background: rgba(239, 68, 68, 0.12);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.25);
+  }
+  .sport-btn-danger:hover:not(:disabled) {
+    background: rgba(239, 68, 68, 0.2);
+  }
+  .sport-btn-danger:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  /* Tab button */
+  .sport-tab {
+    @apply px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-200;
+    color: rgba(255, 255, 255, 0.5);
+    background: transparent;
+  }
+  .sport-tab:hover {
+    color: rgba(255, 255, 255, 0.8);
+    background: rgba(255, 255, 255, 0.05);
+  }
+  .sport-tab-active {
+    @apply px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-200;
+    background: rgba(0, 230, 118, 0.12);
+    color: #00e676;
+    border: 1px solid rgba(0, 230, 118, 0.25);
+  }
+
+  /* Gender tabs */
+  .sport-gender-tab-m {
+    @apply px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-200;
+    background: rgba(59, 130, 246, 0.12);
+    color: #60a5fa;
+    border: 1px solid rgba(59, 130, 246, 0.25);
+  }
+  .sport-gender-tab-f {
+    @apply px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-200;
+    background: rgba(236, 72, 153, 0.12);
+    color: #f472b6;
+    border: 1px solid rgba(236, 72, 153, 0.25);
+  }
+  .sport-gender-tab-inactive {
+    @apply px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-200;
+    color: rgba(255, 255, 255, 0.4);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+  .sport-gender-tab-inactive:hover {
+    color: rgba(255, 255, 255, 0.7);
+    background: rgba(255, 255, 255, 0.07);
+  }
+
+  /* Form input */
+  .sport-input {
+    @apply rounded-xl px-3 py-2.5 text-sm w-full transition-all duration-200;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+    outline: none;
+  }
+  .sport-input::placeholder {
+    color: rgba(255, 255, 255, 0.3);
+  }
+  .sport-input:focus {
+    border-color: rgba(0, 230, 118, 0.5);
+    background: rgba(255, 255, 255, 0.07);
+    box-shadow: 0 0 0 3px rgba(0, 230, 118, 0.08);
+  }
+  .sport-input option {
+    background: #111827;
+    color: #ffffff;
+  }
+
+  /* Select */
+  .sport-select {
+    @apply sport-input appearance-none cursor-pointer;
+  }
+
+  /* Number input small */
+  .sport-input-sm {
+    @apply rounded-lg px-2 py-1.5 text-sm transition-all duration-200 text-center;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+    width: 64px;
+    outline: none;
+  }
+  .sport-input-sm:focus {
+    border-color: rgba(0, 230, 118, 0.5);
+    box-shadow: 0 0 0 2px rgba(0, 230, 118, 0.08);
+  }
+
+  /* Progress bar track */
+  .sport-progress-track {
+    @apply rounded-full overflow-hidden;
+    background: rgba(255, 255, 255, 0.07);
+    height: 6px;
+  }
+  .sport-progress-fill {
+    @apply rounded-full h-full transition-all duration-700 ease-out;
+    background: linear-gradient(90deg, #00e676, #00c853);
+  }
+  .sport-progress-fill-blue {
+    @apply rounded-full h-full transition-all duration-700 ease-out;
+    background: linear-gradient(90deg, #3b82f6, #2563eb);
+  }
+
+  /* Match card broadcast style */
+  .match-card {
+    @apply sport-card p-4;
+  }
+  .match-card-live {
+    @apply sport-card p-4;
+    border-color: rgba(0, 230, 118, 0.4) !important;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 230, 118, 0.15), inset 0 1px 0 rgba(0, 230, 118, 0.1) !important;
+  }
+
+  /* Shimmer loading */
+  .sport-skeleton {
+    @apply rounded-xl;
+    background: linear-gradient(90deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 100%);
+    background-size: 400px 100%;
+    animation: shimmer 2.2s linear infinite;
+  }
+
+  /* Divider */
+  .sport-divider {
+    border-color: var(--sport-border);
+  }
+
+  /* Table */
+  .sport-table {
+    @apply w-full text-sm;
+  }
+  .sport-table thead th {
+    @apply text-left px-3 py-3;
+    font-family: "Rajdhani", sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.4);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  }
+  .sport-table tbody tr {
+    @apply transition-colors duration-150;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  }
+  .sport-table tbody tr:hover {
+    background: rgba(255, 255, 255, 0.03);
+  }
+  .sport-table tbody td {
+    @apply px-3 py-3;
+  }
+  .sport-table tbody tr:last-child {
+    border-bottom: none;
+  }
+
+  /* Alert/error */
+  .sport-alert-error {
+    @apply rounded-xl px-4 py-3 text-sm;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    color: #fca5a5;
+  }
+  .sport-alert-warning {
+    @apply rounded-xl px-4 py-3 text-sm;
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    color: #fcd34d;
+  }
+  .sport-alert-success {
+    @apply rounded-xl px-4 py-3 text-sm;
+    background: rgba(0, 230, 118, 0.1);
+    border: 1px solid rgba(0, 230, 118, 0.25);
+    color: #6ee7b7;
+  }
+
+  /* Pill group */
+  .sport-pill-group {
+    @apply inline-flex rounded-xl overflow-hidden;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.03);
+  }
+  .sport-pill {
+    @apply px-4 py-2 text-sm font-semibold transition-all duration-200;
+    color: rgba(255, 255, 255, 0.5);
+  }
+  .sport-pill:hover {
+    color: rgba(255, 255, 255, 0.8);
+    background: rgba(255, 255, 255, 0.05);
+  }
+  .sport-pill-active {
+    @apply px-4 py-2 text-sm font-semibold;
+    background: rgba(0, 230, 118, 0.12);
+    color: #00e676;
+  }
+}
+
+/* ─── Recharts dark overrides ─────────────────────────────────────────────── */
+.recharts-cartesian-axis-tick-value {
+  fill: rgba(255, 255, 255, 0.4) !important;
+  font-size: 11px !important;
+}
+.recharts-tooltip-wrapper {
+  filter: none !important;
+}
+.recharts-default-tooltip {
+  background: #1a2340 !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 10px !important;
+  color: #fff !important;
+}
+.recharts-cartesian-grid-horizontal line,
+.recharts-cartesian-grid-vertical line {
+  stroke: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* ─── Drag & Drop ─────────────────────────────────────────────────────────── */
+[data-dragging="true"] {
+  opacity: 0.6;
+  cursor: grabbing !important;
 }
