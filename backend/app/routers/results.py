@@ -15,6 +15,10 @@ class ResultCreate(BaseModel):
     goals_away: int
     yellow_home: int = 0
     yellow_away: int = 0
+    red_home: int = 0
+    red_away: int = 0
+    delay_home: int = 0
+    delay_away: int = 0
 
 
 class GoalCreate(BaseModel):
@@ -40,6 +44,10 @@ def set_result(mid: str, data: ResultCreate, db: Session = Depends(get_db)) -> d
         result.goals_away = data.goals_away
         result.yellow_home = data.yellow_home
         result.yellow_away = data.yellow_away
+        result.red_home = data.red_home
+        result.red_away = data.red_away
+        result.delay_home = data.delay_home
+        result.delay_away = data.delay_away
     else:
         result = Result(match_id=mid, **data.model_dump())
         db.add(result)
@@ -61,6 +69,10 @@ def get_result(mid: str, db: Session = Depends(get_db)) -> dict:
         "goals_away": result.goals_away,
         "yellow_home": result.yellow_home,
         "yellow_away": result.yellow_away,
+        "red_home": result.red_home,
+        "red_away": result.red_away,
+        "delay_home": result.delay_home,
+        "delay_away": result.delay_away,
     }
 
 

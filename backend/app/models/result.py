@@ -15,5 +15,9 @@ class Result(Base):
     goals_away = Column(Integer, default=0)
     yellow_home = Column(Integer, default=0)
     yellow_away = Column(Integer, default=0)
+    red_home = Column(Integer, default=0)
+    red_away = Column(Integer, default=0)
+    delay_home = Column(Integer, default=0)  # 0 or 1
+    delay_away = Column(Integer, default=0)  # 0 or 1
 
     match = relationship("Match", back_populates="result")

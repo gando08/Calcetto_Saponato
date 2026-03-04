@@ -6,7 +6,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { tournamentApi } from "../api/client";
 import { useTournamentStore } from "../store/tournament";
-import type { CompatibilityBlock, GroupSummary, GroupTeamSummary } from "../types";
+import type { CompatibilityBlock, GroupSummary, GroupTeamSummary, Tournament } from "../types";
+import { buildTournamentPairs, getTournamentIdForGender } from "../utils/tournamentPairs";
 
 function heatmapClass(value: number | undefined) {
   if (typeof value !== "number") return "bg-slate-100 text-slate-500";
@@ -98,7 +99,7 @@ function CompatibilityTable({ block }: { block: CompatibilityBlock }) {
                 if (rowTeam.id === colTeam.id) {
                   return (
                     <td key={colTeam.id} className="px-2 py-1 text-slate-400">
-                      —
+                      -
                     </td>
                   );
                 }
@@ -131,6 +132,7 @@ function sameIds(a: string[], b: string[]) {
 export function Groups() {
   const queryClient = useQueryClient();
   const { current, setCurrent } = useTournamentStore();
+  const [selectedPairKey, setSelectedPairKey] = useState("");
   const [genderTab, setGenderTab] = useState<"M" | "F">("M");
   const [manualMode, setManualMode] = useState(false);
   const [localGroups, setLocalGroups] = useState<GroupSummary[]>([]);
@@ -141,13 +143,33 @@ export function Groups() {
     queryFn: () => tournamentApi.list()
   });
 
-  useEffect(() => {
-    if (!current && tournamentsQuery.data?.length) {
-      setCurrent(tournamentsQuery.data[0]);
-    }
-  }, [current, setCurrent, tournamentsQuery.data]);
+  const tournaments = (tournamentsQuery.data || []) as Tournament[];
+  const pairs = useMemo(() => buildTournamentPairs(tournaments), [tournaments]);
+  const selectedPair = useMemo(() => pairs.find((pair) => pair.key === selectedPairKey) ?? null, [pairs, selectedPairKey]);
 
-  const tid = current?.id || "";
+  useEffect(() => {
+    if (!pairs.length) {
+      if (selectedPairKey) setSelectedPairKey("");
+      return;
+    }
+    if (selectedPairKey && pairs.some((pair) => pair.key === selectedPairKey)) return;
+    const pairFromCurrent = current
+      ? pairs.find((pair) => pair.male?.id === current.id || pair.female?.id === current.id)
+      : null;
+    setSelectedPairKey((pairFromCurrent || pairs[0]).key);
+  }, [current?.id, pairs, selectedPairKey]);
+
+  useEffect(() => {
+    if (!selectedPair) return;
+    const active = getTournamentIdForGender(selectedPair, genderTab);
+    const fallback = active || selectedPair.male?.id || selectedPair.female?.id || "";
+    const tournament = tournaments.find((item) => item.id === fallback);
+    if (tournament && current?.id !== tournament.id) {
+      setCurrent(tournament);
+    }
+  }, [current?.id, genderTab, selectedPair, setCurrent, tournaments]);
+
+  const tid = getTournamentIdForGender(selectedPair, genderTab) || "";
 
   const groupsQuery = useQuery({
     queryKey: ["groups", tid],
@@ -198,7 +220,11 @@ export function Groups() {
 
   const onGenerateGroups = async () => {
     if (!tid) {
-      setErrorMessage("Seleziona prima un torneo.");
+      setErrorMessage(
+        genderTab === "M"
+          ? "Il torneo maschile non e configurato nella coppia selezionata."
+          : "Il torneo femminile non e configurato nella coppia selezionata."
+      );
       return;
     }
     setErrorMessage(null);
@@ -237,7 +263,10 @@ export function Groups() {
   };
 
   const saveManualChanges = async () => {
-    if (!tid) return;
+    if (!tid) {
+      setErrorMessage(genderTab === "M" ? "Manca il torneo maschile." : "Manca il torneo femminile.");
+      return;
+    }
     setErrorMessage(null);
 
     const originalById = new Map(originalGroups.map((group) => [group.id, group]));
@@ -278,18 +307,19 @@ export function Groups() {
       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div className="flex flex-wrap gap-3 items-end">
           <label className="flex flex-col gap-1">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Torneo attivo</span>
+            <span className="text-xs uppercase tracking-wide text-slate-500">Coppia tornei M/F</span>
             <select
               className="rounded-lg border px-3 py-2 min-w-64"
-              value={current?.id || ""}
+              value={selectedPairKey}
               onChange={(event) => {
-                const selected = (tournamentsQuery.data || []).find((t: { id: string }) => t.id === event.target.value);
-                if (selected) setCurrent(selected);
+                setSelectedPairKey(event.target.value);
+                setManualMode(false);
+                setErrorMessage(null);
               }}
             >
-              {(tournamentsQuery.data || []).map((tournament: { id: string; name: string }) => (
-                <option key={tournament.id} value={tournament.id}>
-                  {tournament.name}
+              {pairs.map((pair) => (
+                <option key={pair.key} value={pair.key}>
+                  {pair.label}
                 </option>
               ))}
             </select>
@@ -347,6 +377,14 @@ export function Groups() {
             Femminile
           </button>
         </div>
+
+        {selectedPair ? (
+          <div className="text-xs text-slate-500">
+            Torneo M: {selectedPair.male?.name || "non configurato"} | Torneo F: {selectedPair.female?.name || "non configurato"}
+          </div>
+        ) : (
+          <div className="text-xs text-amber-700">Nessuna coppia M/F disponibile. Crea prima i tornei in Configurazione.</div>
+        )}
       </section>
 
       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">

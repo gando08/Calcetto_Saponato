@@ -76,15 +76,19 @@ class TournamentScheduler:
                 slot_tid = slot.get("tournament_id")
                 if match_tid and slot_tid and match_tid != slot_tid:
                     continue  # cross-tournament assignment forbidden
-                if not match.get("is_manually_locked"):
+                
+                is_locked_to_this_slot = match.get("is_manually_locked") and match.get("slot_id") == slot["id"]
+                if is_locked_to_this_slot:
+                    key = (match["id"], slot["id"])
+                    assigned[key] = model.new_bool_var(f"a_{match['id']}_{slot['id']}")
+                    model.add(assigned[key] == 1)
+                elif not match.get("is_manually_locked"):
                     if check_hard_constraints(match, slot, teams_unavail):
                         key = (match["id"], slot["id"])
                         assigned[key] = model.new_bool_var(f"a_{match['id']}_{slot['id']}")
 
         # ── Each match gets exactly one slot ──────────────────────────────────
         for match in matches:
-            if match.get("is_manually_locked") and match.get("slot_id"):
-                continue
             valid_slots = [
                 assigned[(match["id"], slot["id"])]
                 for slot in slots
@@ -127,6 +131,36 @@ class TournamentScheduler:
 
         # ── Soft penalty objective ─────────────────────────────────────────────
         penalty_terms = []
+
+        # Track team matches per slot for consecutive check
+        team_slots_vars = defaultdict(list)
+        for (match_id, slot_id), var in assigned.items():
+            match = next(m for m in matches if m["id"] == match_id)
+            if match.get("team_home_id"):
+                team_slots_vars[(match["team_home_id"], slot_id)].append(var)
+            if match.get("team_away_id"):
+                team_slots_vars[(match["team_away_id"], slot_id)].append(var)
+
+        # Max 2 consecutive matches penalty (3+ is penalized)
+        for team in teams:
+            tid_str = team["id"]
+            for i in range(len(slots) - 2):
+                s1, s2, s3 = slots[i]["id"], slots[i+1]["id"], slots[i+2]["id"]
+                vars1 = team_slots_vars.get((tid_str, s1), [])
+                vars2 = team_slots_vars.get((tid_str, s2), [])
+                vars3 = team_slots_vars.get((tid_str, s3), [])
+                
+                if vars1 and vars2 and vars3:
+                    # If team plays in ALL THREE slots -> Penalty
+                    # We need a var that is 1 if (sum(vars1)==1 AND sum(vars2)==1 AND sum(vars3)==1)
+                    # Since at_most_one is enforced per slot, sum(vars) is a bool
+                    v1 = sum(vars1)
+                    v2 = sum(vars2)
+                    v3 = sum(vars3)
+                    triple = model.new_bool_var(f"triple_{tid_str}_{i}")
+                    model.add_conjunction([v1, v2, v3]).only_enforce_if(triple)
+                    penalty_terms.append(triple * weights.get("three_consecutive_penalty", 50))
+
         for match in matches:
             for i, slot in enumerate(slots):
                 key = (match["id"], slot["id"])

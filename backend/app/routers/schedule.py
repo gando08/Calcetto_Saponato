@@ -96,6 +96,9 @@ def schedule_quality(tid: str, db: Session = Depends(get_db)) -> dict:
         .all()
     )
     slot_by_id = {slot.id: slot for slot in slots}
+    # Sort slots to get a stable index for "consecutive" check
+    sorted_slots_list = sorted(slots, key=lambda s: (s.day.date, s.start_time))
+    slot_id_to_index = {slot.id: i for i, slot in enumerate(sorted_slots_list)}
 
     matches = (
         db.query(Match)
@@ -103,7 +106,7 @@ def schedule_quality(tid: str, db: Session = Depends(get_db)) -> dict:
         .filter(Group.tournament_id == tid)
         .all()
     )
-    team_ids = {team_id for match in matches for team_id in [match.team_home_id, match.team_away_id] if team_id}
+    team_ids = {team_id for match in matches for team_id in [match.team_home_id, match.team_away_id] if team_id}  
     teams = db.query(Team).filter(Team.id.in_(team_ids)).all() if team_ids else []
     teams_by_id = {team.id: team for team in teams}
 
@@ -122,13 +125,21 @@ def schedule_quality(tid: str, db: Session = Depends(get_db)) -> dict:
     alerts: list[dict] = []
     match_health: dict[str, dict] = {}
     team_day_counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    team_slot_indices: dict[str, list[int]] = defaultdict(list)
+
+    # Pre-populate team slot indices
+    for m in matches:
+        if m.slot_id and m.slot_id in slot_id_to_index:
+            idx = slot_id_to_index[m.slot_id]
+            if m.team_home_id: team_slot_indices[m.team_home_id].append(idx)
+            if m.team_away_id: team_slot_indices[m.team_away_id].append(idx)
 
     for match in matches:
         hard_reasons: list[str] = []
         soft_reasons: list[str] = []
 
         if not match.slot_id:
-            match_health[match.id] = {"level": "hard", "hard": ["non_schedulato"], "soft": []}
+            match_health[match.id] = {"level": "hard", "hard": ["non_schedulato"], "soft": []}  
             hard_violations += 1
             continue
 
@@ -169,18 +180,27 @@ def schedule_quality(tid: str, db: Session = Depends(get_db)) -> dict:
                     else:
                         soft_reasons.append(f"fascia_non_preferita:{team.name}")
 
+                # Check for 3+ consecutive
+                indices = sorted(team_slot_indices[team_id])
+                for i in range(len(indices) - 2):
+                    if indices[i+1] == indices[i] + 1 and indices[i+2] == indices[i+1] + 1:
+                        curr_idx = slot_id_to_index[match.slot_id]
+                        if curr_idx in [indices[i], indices[i+1], indices[i+2]]:
+                            soft_reasons.append(f"3_partite_consecutive:{team.name}")
+                            break
+
         hard_violations += len(hard_reasons)
         soft_violations += len(soft_reasons)
         level = "hard" if hard_reasons else ("soft" if soft_reasons else "ok")
         match_health[match.id] = {"level": level, "hard": hard_reasons, "soft": soft_reasons}
 
-        if soft_reasons:
+        if soft_reasons or hard_reasons:
             alerts.append(
                 {
                     "match_id": match.id,
-                    "severity": "soft",
+                    "severity": level,
                     "message": f"{match.team_home.name if match.team_home else '?'} vs {match.team_away.name if match.team_away else '?'}",
-                    "reasons": soft_reasons,
+                    "reasons": hard_reasons + soft_reasons,
                 }
             )
 
@@ -215,7 +235,6 @@ def schedule_quality(tid: str, db: Session = Depends(get_db)) -> dict:
         "alerts": alerts[:20],
         "match_health": match_health,
     }
-
 
 @router.post("/{tid}/schedule/apply")
 def apply_schedule(tid: str, db: Session = Depends(get_db)) -> dict:

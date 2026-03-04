@@ -9,6 +9,7 @@ from app.database import Base
 
 class MatchPhase(str, enum.Enum):
     GROUP = "group"
+    ROUND16 = "round16"
     QUARTER = "quarter"
     SEMI = "semi"
     THIRD = "third"

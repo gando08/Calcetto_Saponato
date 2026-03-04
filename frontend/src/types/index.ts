@@ -45,6 +45,15 @@ export interface Slot {
   is_finals_day: boolean;
 }
 
+export interface TournamentDay {
+  id: string;
+  date: string;
+  label: string;
+  is_finals_day: boolean;
+  time_windows: TimeWindow[];
+  slots_count?: number;
+}
+
 export interface Match {
   id: string;
   phase: string;

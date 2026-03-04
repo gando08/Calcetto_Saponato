@@ -19,6 +19,8 @@ def calculate_standings(
             "goal_diff": 0,
             "points": 0,
             "yellow_cards": 0,
+            "red_cards": 0,
+            "delays": 0,
         }
         for team in teams
     }
@@ -37,6 +39,10 @@ def calculate_standings(
         rows[away]["goals_against"] += goals_home
         rows[home]["yellow_cards"] += match.get("yellow_home", 0)
         rows[away]["yellow_cards"] += match.get("yellow_away", 0)
+        rows[home]["red_cards"] += match.get("red_home", 0)
+        rows[away]["red_cards"] += match.get("red_away", 0)
+        rows[home]["delays"] += match.get("delay_home", 0)
+        rows[away]["delays"] += match.get("delay_away", 0)
 
         if goals_home > goals_away:
             rows[home]["won"] += 1
@@ -74,7 +80,10 @@ def apply_tiebreakers(standings: List[Dict], matches: List[Dict], order: List[st
             elif criterion == "goals_against":
                 keys.append(row["goals_against"])
             elif criterion == "fair_play":
-                keys.append(row["yellow_cards"])
+                # Fair play: penalizziamo gialli, rossi (pesano 3) e ritardi (pesano 5)
+                # PiÃ¹ basso Ã¨ il valore, meglio Ã¨.
+                fair_play_score = row["yellow_cards"] + (row["red_cards"] * 3) + (row["delays"] * 5)
+                keys.append(fair_play_score)
             else:
                 keys.append(0)
         return [-row["points"], *keys]

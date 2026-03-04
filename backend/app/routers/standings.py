@@ -88,6 +88,10 @@ def get_standings(tid: str, gender: str, db: Session = Depends(get_db)) -> list:
                         "goals_away": match.result.goals_away,
                         "yellow_home": match.result.yellow_home,
                         "yellow_away": match.result.yellow_away,
+                        "red_home": match.result.red_home,
+                        "red_away": match.result.red_away,
+                        "delay_home": match.result.delay_home,
+                        "delay_away": match.result.delay_away,
                     }
                 )
 

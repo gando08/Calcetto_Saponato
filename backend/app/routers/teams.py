@@ -7,6 +7,7 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.models.slot import Day
 from app.models.team import Team
 from app.models.tournament import Tournament
 from app.schemas.team import TeamCreate, TeamResponse, TeamUpdate
@@ -41,11 +42,28 @@ def _apply_tournament_gender(tournament: Tournament, data: dict) -> dict:
     return data
 
 
+def _norm(value: object) -> str:
+    return str(value or "").strip().lower()
+
+
+def _strip_finals_days_preferences(tid: str, preferred_days: list[str] | None, db: Session) -> list[str]:
+    if not preferred_days:
+        return []
+
+    finals_days = db.query(Day).filter(Day.tournament_id == tid, Day.is_finals_day.is_(True)).all()
+    finals_tokens = {_norm(day.id) for day in finals_days}
+    finals_tokens.update({_norm(day.label) for day in finals_days})
+    finals_tokens.update({_norm(day.date) for day in finals_days})
+
+    return [day for day in preferred_days if _norm(day) not in finals_tokens]
+
+
 @router.post("", response_model=TeamResponse)
 def create_team(tid: str, data: TeamCreate, db: Session = Depends(get_db)) -> Team:
     tournament = _get_tournament_or_404(tid, db)
     _check_team_limits(tournament, db, adding=1)
     team_data = _apply_tournament_gender(tournament, data.model_dump())
+    team_data["preferred_days"] = _strip_finals_days_preferences(tid, team_data.get("preferred_days"), db)
     team = Team(tournament_id=tid, **team_data)
     db.add(team)
     db.commit()
@@ -66,6 +84,8 @@ def update_team(tid: str, team_id: str, data: TeamUpdate, db: Session = Depends(
         raise HTTPException(404, "Squadra non trovata")
     update_data = data.model_dump(exclude_none=True)
     update_data = _apply_tournament_gender(tournament, update_data)
+    if "preferred_days" in update_data:
+        update_data["preferred_days"] = _strip_finals_days_preferences(tid, update_data.get("preferred_days"), db)
     for key, value in update_data.items():
         setattr(team, key, value)
     db.commit()
@@ -94,11 +114,13 @@ async def import_teams(tid: str, file: UploadFile = File(...), db: Session = Dep
 
     imported = []
     for row in rows:
+        preferred_days = row.get("giorni_preferiti", "").split(";") if row.get("giorni_preferiti") else []
+        preferred_days = _strip_finals_days_preferences(tid, preferred_days, db)
         team_data: dict = {
             "tournament_id": tid,
             "name": row["nome"],
             "gender": row.get("genere", "M"),
-            "preferred_days": row.get("giorni_preferiti", "").split(";") if row.get("giorni_preferiti") else [],
+            "preferred_days": preferred_days,
         }
         team_data = _apply_tournament_gender(tournament, team_data)
         team = Team(**team_data)

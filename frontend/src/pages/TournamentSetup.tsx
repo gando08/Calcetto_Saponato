@@ -3,9 +3,12 @@ import { useEffect, useMemo, useState } from "react";
 import { closestCenter, DndContext, type DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { tournamentApi } from "../api/client";
 import { useTournamentStore } from "../store/tournament";
+import type { Tournament, TournamentDay } from "../types";
+import { buildGenderTournamentName, buildTournamentPairs } from "../utils/tournamentPairs";
 
 type TimeWindowInput = {
   start: string;
@@ -19,6 +22,7 @@ type DayInput = {
 };
 
 type PenaltyWeights = Record<string, number>;
+type SetupMode = "create" | "edit";
 
 const STEPS = [
   "Info Base",
@@ -127,6 +131,13 @@ function buildInitialDays(totalDays: number): DayInput[] {
   }));
 }
 
+function parseNameAndYear(rawName: string) {
+  const value = rawName.trim();
+  const match = value.match(/^(.*)\s(20\d{2}|21\d{2})$/);
+  if (!match) return { name: value, year: new Date().getFullYear() };
+  return { name: match[1].trim(), year: Number(match[2]) };
+}
+
 function SortableTiebreakerItem({ id }: { id: string }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
 
@@ -148,16 +159,23 @@ function SortableTiebreakerItem({ id }: { id: string }) {
 }
 
 export function TournamentSetup() {
-  const { setCurrent } = useTournamentStore();
+  const queryClient = useQueryClient();
+  const { current, setCurrent } = useTournamentStore();
+  const [mode, setMode] = useState<SetupMode>("create");
+  const [loadedTournamentId, setLoadedTournamentId] = useState<string>("");
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [loadingEdit, setLoadingEdit] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   const [name, setName] = useState("Torneo Calcetto Saponato");
   const [year, setYear] = useState(new Date().getFullYear());
+  const [createAsPair, setCreateAsPair] = useState(true);
   const [gender, setGender] = useState<"" | "M" | "F">("");
   const [maxTeams, setMaxTeams] = useState<number | "">(16);
+  const [maleMaxTeams, setMaleMaxTeams] = useState(16);
+  const [femaleMaxTeams, setFemaleMaxTeams] = useState(6);
 
   const [totalDays, setTotalDays] = useState(4);
   const [finalsDays, setFinalsDays] = useState<number[]>([]);
@@ -181,6 +199,127 @@ export function TournamentSetup() {
       activationConstraint: { distance: 8 }
     })
   );
+
+  const tournamentsQuery = useQuery({
+    queryKey: ["tournaments"],
+    queryFn: () => tournamentApi.list()
+  });
+  const deleteTournamentMutation = useMutation({
+    mutationFn: (id: string) => tournamentApi.delete(id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["tournaments"] });
+    }
+  });
+
+  const tournamentPairs = useMemo(
+    () => buildTournamentPairs(((tournamentsQuery.data || []) as Tournament[])),
+    [tournamentsQuery.data]
+  );
+  const currentPair = useMemo(
+    () =>
+      tournamentPairs.find((pair) => pair.male?.id === current?.id || pair.female?.id === current?.id) ?? null,
+    [current?.id, tournamentPairs]
+  );
+
+  useEffect(() => {
+    if (!current && tournamentsQuery.data?.length) {
+      setCurrent((tournamentsQuery.data as Tournament[])[0]);
+    }
+  }, [current, setCurrent, tournamentsQuery.data]);
+
+  const resetCreateForm = () => {
+    setLoadedTournamentId("");
+    setStep(0);
+    setName("Torneo Calcetto Saponato");
+    setYear(new Date().getFullYear());
+    setCreateAsPair(true);
+    setGender("");
+    setMaxTeams(16);
+    setMaleMaxTeams(16);
+    setFemaleMaxTeams(6);
+    setTotalDays(4);
+    setFinalsDays([]);
+    setDays(buildInitialDays(4));
+    setMatchDuration(30);
+    setBufferMinutes(5);
+    setTeamsPerGroup(4);
+    setTeamsAdvancingPerGroup(2);
+    setWildcardEnabled(false);
+    setWildcardCount(0);
+    setPointsWin(3);
+    setPointsDraw(1);
+    setPointsLoss(0);
+    setTiebreakers(DEFAULT_TIEBREAKERS);
+    setPenaltyWeights(DEFAULT_PENALTIES);
+  };
+
+  useEffect(() => {
+    if (mode !== "edit" || !current?.id || loadedTournamentId === current.id) return;
+    let cancelled = false;
+
+    const load = async () => {
+      setLoadingEdit(true);
+      setError(null);
+      setSuccess(null);
+      try {
+        const [tournament, dayPayload] = await Promise.all([
+          tournamentApi.get(current.id),
+          tournamentApi.getDays(current.id)
+        ]);
+        if (cancelled) return;
+
+        const parsed = parseNameAndYear(tournament.name || "");
+        setName(parsed.name || tournament.name || "");
+        setYear(parsed.year);
+        setCreateAsPair(false);
+        setGender((tournament.gender || "") as "" | "M" | "F");
+        setMaxTeams(tournament.max_teams ?? "");
+        setTotalDays(Math.max(1, Number(tournament.total_days || 1)));
+        setMatchDuration(Number(tournament.match_duration_minutes || 30));
+        setBufferMinutes(Number(tournament.buffer_minutes || 0));
+        setTeamsPerGroup(Number(tournament.teams_per_group || 4));
+        setTeamsAdvancingPerGroup(Number(tournament.teams_advancing_per_group || 2));
+        setWildcardEnabled(Boolean(tournament.wildcard_enabled));
+        setWildcardCount(Number(tournament.wildcard_count || 0));
+        setPointsWin(Number(tournament.points_win || 3));
+        setPointsDraw(Number(tournament.points_draw || 1));
+        setPointsLoss(Number(tournament.points_loss || 0));
+        setTiebreakers((tournament.tiebreaker_order || DEFAULT_TIEBREAKERS) as string[]);
+        setPenaltyWeights({ ...DEFAULT_PENALTIES, ...(tournament.penalty_weights || {}) });
+
+        const daysLoaded = (dayPayload as TournamentDay[]).map((day) => ({
+          label: day.label,
+          date: day.date,
+          windows: day.time_windows || [{ start: "10:00", end: "13:00" }]
+        }));
+        const mappedDays =
+          daysLoaded.length > 0 ? daysLoaded : buildInitialDays(Math.max(1, Number(tournament.total_days || 1)));
+        setDays(mappedDays);
+        setTotalDays(mappedDays.length);
+
+        const finals = (dayPayload as TournamentDay[])
+          .map((day, index) => ({ index, is_finals_day: day.is_finals_day }))
+          .filter((day) => day.is_finals_day)
+          .map((day) => day.index + 1);
+        setFinalsDays(finals);
+
+        setLoadedTournamentId(current.id);
+      } catch (err: unknown) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Errore caricamento configurazione torneo.");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingEdit(false);
+        }
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [current?.id, loadedTournamentId, mode]);
 
   useEffect(() => {
     setDays((current) => {
@@ -334,6 +473,70 @@ export function TournamentSetup() {
     setStep((current) => Math.max(current - 1, 0));
   };
 
+  const onDeleteCurrentTournament = async () => {
+    if (!current?.id) {
+      setError("Seleziona prima un torneo da eliminare.");
+      return;
+    }
+    if (!confirm(`Eliminare il torneo "${current.name}"?`)) return;
+
+    setError(null);
+    setSuccess(null);
+    try {
+      const deletedId = current.id;
+      await deleteTournamentMutation.mutateAsync(deletedId);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["teams", deletedId] }),
+        queryClient.invalidateQueries({ queryKey: ["days", deletedId] }),
+        queryClient.invalidateQueries({ queryKey: ["slots", deletedId] }),
+        queryClient.invalidateQueries({ queryKey: ["groups", deletedId] }),
+        queryClient.invalidateQueries({ queryKey: ["groups-compatibility", deletedId] })
+      ]);
+
+      const remaining = (((tournamentsQuery.data || []) as Tournament[]).filter((tournament) => tournament.id !== deletedId));
+      setCurrent(remaining[0] || null);
+      setLoadedTournamentId("");
+      if (remaining.length === 0) {
+        setMode("create");
+        resetCreateForm();
+      }
+      setSuccess("Torneo eliminato con successo.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Errore durante eliminazione torneo.");
+    }
+  };
+
+  const onDeleteCurrentPair = async () => {
+    if (!currentPair) {
+      setError("Nessuna coppia M/F associata al torneo selezionato.");
+      return;
+    }
+
+    const tournamentIds = [currentPair.male?.id, currentPair.female?.id].filter(Boolean) as string[];
+    if (tournamentIds.length === 0) {
+      setError("Nessun torneo da eliminare.");
+      return;
+    }
+
+    const confirmLabel = currentPair.label || "questa coppia";
+    if (!confirm(`Eliminare la coppia "${confirmLabel}" (${tournamentIds.length} tornei)?`)) return;
+
+    setError(null);
+    setSuccess(null);
+    try {
+      await Promise.all(tournamentIds.map((id) => tournamentApi.delete(id)));
+      await queryClient.invalidateQueries({ queryKey: ["tournaments"] });
+      await Promise.all(tournamentIds.map((id) => queryClient.invalidateQueries({ queryKey: ["teams", id] })));
+      setCurrent(null);
+      setLoadedTournamentId("");
+      setMode("create");
+      resetCreateForm();
+      setSuccess("Coppia di tornei eliminata.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Errore durante eliminazione coppia tornei.");
+    }
+  };
+
   const submit = async () => {
     setError(null);
     setSuccess(null);
@@ -342,41 +545,93 @@ export function TournamentSetup() {
 
     const normalizedName = name.trim();
     const suffix = String(year).trim();
+    const parsedBase = parseNameAndYear(normalizedName);
     const tournamentName = suffix && !normalizedName.endsWith(suffix) ? `${normalizedName} ${suffix}` : normalizedName;
+    const basePayload = {
+      total_days: totalDays,
+      match_duration_minutes: matchDuration,
+      buffer_minutes: bufferMinutes,
+      teams_per_group: teamsPerGroup,
+      teams_advancing_per_group: teamsAdvancingPerGroup,
+      wildcard_enabled: wildcardEnabled,
+      wildcard_count: wildcardEnabled ? wildcardCount : 0,
+      points_win: pointsWin,
+      points_draw: pointsDraw,
+      points_loss: pointsLoss,
+      tiebreaker_order: tiebreakers,
+      penalty_weights: penaltyWeights
+    };
+    const daysPayload = days.map((day, index) => ({
+      date: day.date,
+      label: day.label || `Giorno ${index + 1}`,
+      is_finals_day: finalsDays.includes(index + 1),
+      time_windows: day.windows.filter((window) => window.start && window.end && window.start < window.end)
+    }));
 
     setSaving(true);
     try {
-      const tournament = await tournamentApi.create({
-        name: tournamentName,
-        gender: gender || null,
-        max_teams: gender && maxTeams !== "" ? Number(maxTeams) : null,
-        total_days: totalDays,
-        match_duration_minutes: matchDuration,
-        buffer_minutes: bufferMinutes,
-        teams_per_group: teamsPerGroup,
-        teams_advancing_per_group: teamsAdvancingPerGroup,
-        wildcard_enabled: wildcardEnabled,
-        wildcard_count: wildcardEnabled ? wildcardCount : 0,
-        points_win: pointsWin,
-        points_draw: pointsDraw,
-        points_loss: pointsLoss,
-        tiebreaker_order: tiebreakers,
-        penalty_weights: penaltyWeights
-      });
+      if (mode === "edit") {
+        if (!current?.id) {
+          throw new Error("Seleziona un torneo da modificare.");
+        }
+        const tournamentPayload = {
+          ...basePayload,
+          name: tournamentName,
+          gender: gender || null,
+          max_teams: gender && maxTeams !== "" ? Number(maxTeams) : null
+        };
+        const updated = await tournamentApi.update(current.id, tournamentPayload);
+        await tournamentApi.replaceDays(current.id, daysPayload);
+        await queryClient.invalidateQueries({ queryKey: ["tournaments"] });
+        setCurrent(updated);
+        setLoadedTournamentId(current.id);
+        setSuccess(`Torneo aggiornato con successo (ID: ${current.id}).`);
+      } else if (createAsPair) {
+        const baseNameForPair = parsedBase.name || normalizedName;
+        const malePayload = {
+          ...basePayload,
+          name: buildGenderTournamentName(baseNameForPair, year, "M"),
+          gender: "M",
+          max_teams: Math.max(2, Number(maleMaxTeams) || 16)
+        };
+        const femalePayload = {
+          ...basePayload,
+          name: buildGenderTournamentName(baseNameForPair, year, "F"),
+          gender: "F",
+          max_teams: Math.max(2, Number(femaleMaxTeams) || 6)
+        };
 
-      for (let index = 0; index < days.length; index += 1) {
-        const day = days[index];
-        const validWindows = day.windows.filter((window) => window.start && window.end && window.start < window.end);
-        await tournamentApi.addDay(tournament.id, {
-          date: day.date,
-          label: day.label || `Giorno ${index + 1}`,
-          is_finals_day: finalsDays.includes(index + 1),
-          time_windows: validWindows
-        });
+        const [maleTournament, femaleTournament] = await Promise.all([
+          tournamentApi.create(malePayload),
+          tournamentApi.create(femalePayload)
+        ]);
+        await Promise.all([
+          tournamentApi.replaceDays(maleTournament.id, daysPayload),
+          tournamentApi.replaceDays(femaleTournament.id, daysPayload)
+        ]);
+        await queryClient.invalidateQueries({ queryKey: ["tournaments"] });
+        setCurrent(maleTournament);
+        setMode("edit");
+        setCreateAsPair(false);
+        setLoadedTournamentId(maleTournament.id);
+        setSuccess(
+          `Coppia creata con successo. M: ${maleTournament.id} | F: ${femaleTournament.id}.`
+        );
+      } else {
+        const tournamentPayload = {
+          ...basePayload,
+          name: tournamentName,
+          gender: gender || null,
+          max_teams: gender && maxTeams !== "" ? Number(maxTeams) : null
+        };
+        const created = await tournamentApi.create(tournamentPayload);
+        await tournamentApi.replaceDays(created.id, daysPayload);
+        await queryClient.invalidateQueries({ queryKey: ["tournaments"] });
+        setCurrent(created);
+        setMode("edit");
+        setLoadedTournamentId(created.id);
+        setSuccess(`Torneo creato con successo (ID: ${created.id}).`);
       }
-
-      setCurrent(tournament);
-      setSuccess(`Torneo creato con successo (ID: ${tournament.id}).`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Errore durante il salvataggio.");
     } finally {
@@ -386,12 +641,85 @@ export function TournamentSetup() {
 
   return (
     <div className="space-y-4">
-      <header className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">Configurazione Torneo</h1>
-          <p className="text-sm text-slate-600">Stepper in 4 fasi: info base, fasce, formato e pesi solver.</p>
-        </div>
+      <header>
+        <h1 className="text-2xl font-bold">Configurazione Torneo</h1>
+        <p className="text-sm text-slate-600">Puoi creare un nuovo torneo o modificare quello esistente.</p>
       </header>
+
+      <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+        <div className="flex flex-wrap gap-3 items-end">
+          <label className="flex flex-col gap-1">
+            <span className="text-xs uppercase tracking-wide text-slate-500">Torneo attivo</span>
+            <select
+              className="rounded-lg border px-3 py-2 min-w-64"
+              value={current?.id || ""}
+              onChange={(event) => {
+                const selected = ((tournamentsQuery.data || []) as Tournament[]).find((tournament) => tournament.id === event.target.value);
+                if (selected) {
+                  setCurrent(selected);
+                  setLoadedTournamentId("");
+                }
+              }}
+            >
+              {((tournamentsQuery.data || []) as Tournament[]).map((tournament) => (
+                <option key={tournament.id} value={tournament.id}>
+                  {tournament.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="inline-flex rounded-lg border overflow-hidden">
+            <button
+              type="button"
+              className={`px-4 py-2 text-sm ${mode === "create" ? "bg-slate-900 text-white" : "bg-white text-slate-700"}`}
+              onClick={() => {
+                setMode("create");
+                setError(null);
+                setSuccess(null);
+                resetCreateForm();
+              }}
+            >
+              Nuovo torneo
+            </button>
+            <button
+              type="button"
+              className={`px-4 py-2 text-sm ${mode === "edit" ? "bg-slate-900 text-white" : "bg-white text-slate-700"}`}
+              onClick={() => {
+                setMode("edit");
+                setError(null);
+                setSuccess(null);
+                setLoadedTournamentId("");
+              }}
+              disabled={!current?.id}
+            >
+              Modifica torneo
+            </button>
+          </div>
+
+          <button
+            type="button"
+            className="rounded-lg border border-red-300 text-red-700 px-3 py-2 text-sm disabled:opacity-50"
+            onClick={() => void onDeleteCurrentTournament()}
+            disabled={!current?.id || deleteTournamentMutation.isPending}
+          >
+            {deleteTournamentMutation.isPending ? "Eliminazione..." : "Elimina torneo"}
+          </button>
+
+          <button
+            type="button"
+            className="rounded-lg border border-red-300 text-red-700 px-3 py-2 text-sm disabled:opacity-50"
+            onClick={() => void onDeleteCurrentPair()}
+            disabled={!currentPair || deleteTournamentMutation.isPending}
+          >
+            Elimina coppia M/F
+          </button>
+        </div>
+        <div className="text-xs text-slate-500">
+          Coppie M/F rilevate: <strong>{tournamentPairs.length}</strong>
+          {currentPair ? ` - corrente: ${currentPair.label}` : ""}
+        </div>
+      </section>
 
       <ol className="grid gap-2 md:grid-cols-4">
         {STEPS.map((label, index) => (
@@ -410,6 +738,9 @@ export function TournamentSetup() {
       {error ? <div className="rounded-lg border border-red-300 bg-red-100 px-3 py-2 text-red-700 text-sm">{error}</div> : null}
       {success ? (
         <div className="rounded-lg border border-green-300 bg-green-100 px-3 py-2 text-green-700 text-sm">{success}</div>
+      ) : null}
+      {loadingEdit ? (
+        <div className="rounded-lg border bg-slate-100 px-3 py-2 text-slate-700 text-sm">Caricamento configurazione torneo...</div>
       ) : null}
 
       <div className="grid gap-4 xl:grid-cols-[1fr_320px]">
@@ -433,37 +764,83 @@ export function TournamentSetup() {
                 />
               </label>
 
-              <label className="flex flex-col gap-1">
-                <span className="text-sm font-medium">Genere torneo</span>
-                <select
-                  className="rounded-lg border px-3 py-2"
-                  value={gender}
-                  onChange={(event) => {
-                    const next = event.target.value as "" | "M" | "F";
-                    setGender(next);
-                    if (next === "M") setMaxTeams(16);
-                    if (next === "F") setMaxTeams(6);
-                    if (!next) setMaxTeams("");
-                  }}
-                >
-                  <option value="">Misto / non specificato</option>
-                  <option value="M">Maschile (M)</option>
-                  <option value="F">Femminile (F)</option>
-                </select>
-              </label>
-
-              {gender ? (
-                <label className="flex flex-col gap-1">
-                  <span className="text-sm font-medium">Numero max squadre</span>
+              {mode === "create" ? (
+                <label className="inline-flex items-center gap-2 text-sm mt-6">
                   <input
-                    type="number"
-                    min={2}
-                    className="rounded-lg border px-3 py-2"
-                    value={maxTeams}
-                    onChange={(event) => setMaxTeams(event.target.value === "" ? "" : Number(event.target.value))}
+                    type="checkbox"
+                    checked={createAsPair}
+                    onChange={(event) => {
+                      const checked = event.target.checked;
+                      setCreateAsPair(checked);
+                      if (checked) {
+                        setGender("");
+                      }
+                    }}
                   />
+                  Crea coppia tornei M/F (gestione centralizzata)
                 </label>
-              ) : null}
+              ) : (
+                <div className="text-xs text-slate-500 mt-6">Modifica torneo singolo.</div>
+              )}
+
+              {createAsPair && mode === "create" ? (
+                <>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-sm font-medium">Max squadre Maschile (M)</span>
+                    <input
+                      type="number"
+                      min={2}
+                      className="rounded-lg border px-3 py-2"
+                      value={maleMaxTeams}
+                      onChange={(event) => setMaleMaxTeams(Math.max(2, Number(event.target.value) || 2))}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-sm font-medium">Max squadre Femminile (F)</span>
+                    <input
+                      type="number"
+                      min={2}
+                      className="rounded-lg border px-3 py-2"
+                      value={femaleMaxTeams}
+                      onChange={(event) => setFemaleMaxTeams(Math.max(2, Number(event.target.value) || 2))}
+                    />
+                  </label>
+                </>
+              ) : (
+                <>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-sm font-medium">Genere torneo</span>
+                    <select
+                      className="rounded-lg border px-3 py-2"
+                      value={gender}
+                      onChange={(event) => {
+                        const next = event.target.value as "" | "M" | "F";
+                        setGender(next);
+                        if (next === "M") setMaxTeams(16);
+                        if (next === "F") setMaxTeams(6);
+                        if (!next) setMaxTeams("");
+                      }}
+                    >
+                      <option value="">Misto / non specificato</option>
+                      <option value="M">Maschile (M)</option>
+                      <option value="F">Femminile (F)</option>
+                    </select>
+                  </label>
+
+                  {gender ? (
+                    <label className="flex flex-col gap-1">
+                      <span className="text-sm font-medium">Numero max squadre</span>
+                      <input
+                        type="number"
+                        min={2}
+                        className="rounded-lg border px-3 py-2"
+                        value={maxTeams}
+                        onChange={(event) => setMaxTeams(event.target.value === "" ? "" : Number(event.target.value))}
+                      />
+                    </label>
+                  ) : null}
+                </>
+              )}
 
               <label className="flex flex-col gap-1">
                 <span className="text-sm font-medium">Numero giorni torneo</span>
@@ -760,14 +1137,14 @@ export function TournamentSetup() {
               type="button"
               className="rounded-lg border px-4 py-2 disabled:opacity-50"
               onClick={prevStep}
-              disabled={step === 0 || saving}
+              disabled={step === 0 || saving || loadingEdit}
             >
               Indietro
             </button>
 
             <div className="flex gap-2">
               {step < STEPS.length - 1 ? (
-                <button type="button" className="rounded-lg border px-4 py-2" onClick={nextStep} disabled={saving}>
+                <button type="button" className="rounded-lg border px-4 py-2" onClick={nextStep} disabled={saving || loadingEdit}>
                   Avanti
                 </button>
               ) : (
@@ -775,9 +1152,9 @@ export function TournamentSetup() {
                   type="button"
                   className="rounded-lg bg-slate-900 text-white px-4 py-2 disabled:opacity-50"
                   onClick={() => void submit()}
-                  disabled={saving}
+                  disabled={saving || loadingEdit}
                 >
-                  {saving ? "Salvataggio..." : "Salva torneo"}
+                  {saving ? "Salvataggio..." : mode === "edit" ? "Aggiorna torneo" : createAsPair ? "Crea coppia M/F" : "Salva torneo"}
                 </button>
               )}
             </div>
@@ -788,8 +1165,17 @@ export function TournamentSetup() {
           <h2 className="font-semibold">Riepilogo Rapido</h2>
           <div className="text-sm space-y-1">
             <div>
+              <span className="text-slate-500">Modalita:</span>{" "}
+              {mode === "edit" ? "Modifica" : createAsPair ? "Creazione coppia M/F" : "Creazione singolo"}
+            </div>
+            <div>
               <span className="text-slate-500">Torneo:</span> {name || "-"} {year}
             </div>
+            {mode !== "edit" && createAsPair ? (
+              <div>
+                <span className="text-slate-500">Max squadre M/F:</span> {maleMaxTeams} / {femaleMaxTeams}
+              </div>
+            ) : null}
             <div>
               <span className="text-slate-500">Giorni:</span> {totalDays}
             </div>

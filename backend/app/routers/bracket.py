@@ -5,8 +5,11 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.group import Group, GroupPhase
 from app.models.match import Match, MatchPhase, MatchStatus
-from app.models.team import Team
-from app.services.bracket_generator import generate_bracket
+from app.models.tournament import Tournament
+from app.services.bracket_rules_service import build_first_round_pairings
+from app.services.qualification_service import QualificationError, select_finalists
+from app.services.seeding_service import build_seed_pool
+from app.services.standings_calculator import calculate_standings
 
 router = APIRouter(prefix="/api/tournaments", tags=["bracket"])
 
@@ -18,6 +21,7 @@ class BracketAdvancePayload(BaseModel):
 
 def _phase_to_enum(phase: str) -> MatchPhase:
     phase_map = {
+        "round16": MatchPhase.ROUND16,
         "quarter": MatchPhase.QUARTER,
         "semi": MatchPhase.SEMI,
         "final": MatchPhase.FINAL,
@@ -36,7 +40,7 @@ def _status_to_str(status: MatchStatus) -> str:
 
 def _phase_sort_key(phase: MatchPhase) -> int:
     value = _phase_to_str(phase)
-    order = {"group": 0, "quarter": 1, "semi": 2, "final": 3, "third": 4}
+    order = {"group": 0, "round16": 1, "quarter": 2, "semi": 3, "final": 4, "third": 5}
     return order.get(value, 99)
 
 
@@ -53,19 +57,73 @@ def _find_final_group(tid: str, gender: str, db: Session) -> Group | None:
     )
 
 
-def _serialize_bracket_matches(matches: list[Match], gender: str) -> list[dict]:
-    sorted_matches = sorted(matches, key=lambda match: (match.round, _phase_sort_key(match.phase), match.id))
-    round_positions: dict[int, int] = {}
-    result: list[dict] = []
+def _first_round_sort_key(match: Match) -> tuple:
+    home_token = match.team_home_id or f"placeholder:{match.placeholder_home or ''}"
+    away_token = match.team_away_id or f"placeholder:{match.placeholder_away or ''}"
+    return (
+        _phase_sort_key(match.phase),
+        home_token,
+        away_token,
+        match.id,
+    )
 
-    for match in sorted_matches:
-        phase_value = _phase_to_str(match.phase)
-        if phase_value == "third":
-            bracket_position = 99
+
+def _downstream_sort_key(match: Match, previous_positions: dict[str, int]) -> tuple:
+    missing_position = 10**9
+    home_position = previous_positions.get(match.prerequisite_match_home_id or "", missing_position)
+    away_position = previous_positions.get(match.prerequisite_match_away_id or "", missing_position)
+    return (
+        _phase_sort_key(match.phase),
+        home_position,
+        away_position,
+        str(match.prerequisite_match_home_id or ""),
+        str(match.prerequisite_match_away_id or ""),
+        str(match.placeholder_home or ""),
+        str(match.placeholder_away or ""),
+        match.id,
+    )
+
+
+def _stable_order_with_positions(matches: list[Match]) -> tuple[list[Match], dict[str, int]]:
+    non_third_matches = [match for match in matches if _phase_to_str(match.phase) != "third"]
+    rounds = sorted({int(match.round or 0) for match in non_third_matches})
+
+    ordered: list[Match] = []
+    positions_by_match_id: dict[str, int] = {}
+    previous_round_positions: dict[str, int] = {}
+
+    for idx, round_number in enumerate(rounds):
+        round_matches = [match for match in non_third_matches if int(match.round or 0) == round_number]
+        if idx == 0:
+            round_matches = sorted(round_matches, key=_first_round_sort_key)
         else:
-            bracket_position = round_positions.get(match.round, 0)
-            round_positions[match.round] = bracket_position + 1
+            round_matches = sorted(
+                round_matches,
+                key=lambda match: _downstream_sort_key(match, previous_round_positions),
+            )
 
+        current_round_positions: dict[str, int] = {}
+        for position, match in enumerate(round_matches):
+            positions_by_match_id[match.id] = position
+            current_round_positions[match.id] = position
+            ordered.append(match)
+
+        previous_round_positions = current_round_positions
+
+    return ordered, positions_by_match_id
+
+
+def _serialize_bracket_matches(matches: list[Match], gender: str) -> list[dict]:
+    ordered_non_third, positions_by_match_id = _stable_order_with_positions(matches)
+    third_matches = sorted(
+        (match for match in matches if _phase_to_str(match.phase) == "third"),
+        key=lambda match: (int(match.round or 0), match.id),
+    )
+
+    result: list[dict] = []
+    for match in [*ordered_non_third, *third_matches]:
+        phase_value = _phase_to_str(match.phase)
+        bracket_position = 99 if phase_value == "third" else positions_by_match_id.get(match.id, 0)
         result.append(
             {
                 "id": match.id,
@@ -82,7 +140,147 @@ def _serialize_bracket_matches(matches: list[Match], gender: str) -> list[dict]:
                 "prerequisite_match_away_id": match.prerequisite_match_away_id,
             }
         )
+
     return result
+
+
+def _build_group_payload(groups: list[Group], tournament: Tournament) -> list[dict]:
+    config = {
+        "points_win": tournament.points_win,
+        "points_draw": tournament.points_draw,
+        "points_loss": tournament.points_loss,
+    }
+    tiebreakers = tournament.tiebreaker_order or []
+    payload: list[dict] = []
+
+    for group in sorted(groups, key=lambda item: item.name):
+        team_ids = sorted(team.id for team in group.teams)
+        matches_data = []
+        for match in group.matches:
+            if (
+                match.status == MatchStatus.PLAYED
+                and match.result
+                and match.team_home_id
+                and match.team_away_id
+            ):
+                matches_data.append(
+                    {
+                        "home": match.team_home_id,
+                        "away": match.team_away_id,
+                        "goals_home": match.result.goals_home,
+                        "goals_away": match.result.goals_away,
+                        "yellow_home": match.result.yellow_home,
+                        "yellow_away": match.result.yellow_away,
+                    }
+                )
+
+        standings_rows = calculate_standings(team_ids, matches_data, config, tiebreakers)
+        standings_payload = []
+        for row in standings_rows:
+            standings_payload.append(
+                {
+                    "team": row.get("team"),
+                    "points": row.get("points", 0),
+                    "goal_diff": row.get("goal_diff", 0),
+                    "goals_for": row.get("goals_for", 0),
+                    "goals_against": row.get("goals_against", 0),
+                    "yellow_cards": row.get("yellow_cards", 0),
+                    "drawn": row.get("drawn", 0),
+                }
+            )
+
+        matches_payload = [
+            {
+                "status": _status_to_str(match.status).lower(),
+                "goals_home": match.result.goals_home if match.result else None,
+                "goals_away": match.result.goals_away if match.result else None,
+            }
+            for match in group.matches
+        ]
+
+        payload.append(
+            {
+                "name": group.name,
+                "standings": standings_payload,
+                "matches": matches_payload,
+            }
+        )
+
+    return payload
+
+
+def _phase_for_round_size(round_size: int) -> str:
+    if round_size <= 1:
+        return "final"
+    if round_size == 2:
+        return "semi"
+    if round_size == 4:
+        return "quarter"
+    if round_size == 8:
+        return "round16"
+    return "group"
+
+
+def _build_bracket_payload(
+    pairings: list[tuple[dict | None, dict | None]],
+    target_size: int,
+    gender: str,
+) -> list[dict]:
+    matches: list[dict] = []
+    first_round_phase = _phase_for_round_size(target_size // 2)
+
+    current_round: list[dict] = []
+    for idx, (home, away) in enumerate(pairings):
+        current_round_match = {
+            "phase": first_round_phase,
+            "round": 1,
+            "gender": gender.upper(),
+            "team_home_id": home["team"] if home else None,
+            "team_away_id": away["team"] if away else None,
+            "placeholder_home": home["team"] if home else f"Bye H{idx + 1}",
+            "placeholder_away": away["team"] if away else f"Bye A{idx + 1}",
+            "bracket_position": idx,
+        }
+        current_round.append(current_round_match)
+        matches.append(current_round_match)
+
+    round_num = 2
+    while len(current_round) > 1:
+        next_round: list[dict] = []
+        next_round_size = len(current_round) // 2
+        phase_name = _phase_for_round_size(next_round_size)
+
+        for idx in range(0, len(current_round), 2):
+            next_round_match = {
+                "phase": phase_name,
+                "round": round_num,
+                "gender": gender.upper(),
+                "team_home_id": None,
+                "team_away_id": None,
+                "placeholder_home": f"Vincitore Match {idx + 1}",
+                "placeholder_away": f"Vincitore Match {idx + 2}",
+                "bracket_position": idx // 2,
+                "prerequisite_positions": [idx, idx + 1],
+            }
+            next_round.append(next_round_match)
+            matches.append(next_round_match)
+
+        current_round = next_round
+        round_num += 1
+
+    matches.append(
+        {
+            "phase": "third",
+            "round": max(round_num - 1, 1),
+            "gender": gender.upper(),
+            "team_home_id": None,
+            "team_away_id": None,
+            "placeholder_home": "Perdente Semifinale 1",
+            "placeholder_away": "Perdente Semifinale 2",
+            "bracket_position": 99,
+        }
+    )
+    return matches
 
 
 @router.get("/{tid}/bracket/{gender}")
@@ -96,6 +294,10 @@ def get_final_bracket(tid: str, gender: str, db: Session = Depends(get_db)) -> d
 @router.post("/{tid}/bracket/{gender}")
 def generate_final_bracket(tid: str, gender: str, db: Session = Depends(get_db)) -> dict:
     gender_upper = gender.upper()
+    tournament = db.query(Tournament).filter(Tournament.id == tid).first()
+    if not tournament:
+        raise HTTPException(404, "Torneo non trovato")
+
     groups = (
         db.query(Group)
         .filter(
@@ -107,6 +309,20 @@ def generate_final_bracket(tid: str, gender: str, db: Session = Depends(get_db))
     )
     if not groups:
         raise HTTPException(404, "Nessun girone trovato per questo genere")
+
+    group_payload = _build_group_payload(groups, tournament)
+    try:
+        selection = select_finalists(group_payload, gender_upper, tournament.tiebreaker_order or [])
+    except QualificationError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    seed_pool = build_seed_pool(
+        selection["direct_qualifiers"],
+        selection["wildcards"],
+        tournament.tiebreaker_order or [],
+    )
+    pairings, warnings = build_first_round_pairings(seed_pool, int(selection["target_size"]))
+    bracket = _build_bracket_payload(pairings, int(selection["target_size"]), gender_upper)
 
     existing_final_groups = (
         db.query(Group)
@@ -120,14 +336,6 @@ def generate_final_bracket(tid: str, gender: str, db: Session = Depends(get_db))
     for final_group in existing_final_groups:
         db.delete(final_group)
     db.flush()
-
-    advancing = []
-    for group in groups:
-        for idx, team in enumerate(group.teams[:2], start=1):
-            advancing.append({"id": team.id, "name": team.name, "rank": idx, "group": group.name})
-
-    wildcard_teams = []
-    bracket = generate_bracket(advancing, wildcard_teams, [], gender_upper)
 
     final_group = Group(
         tournament_id=tid,
@@ -176,19 +384,29 @@ def generate_final_bracket(tid: str, gender: str, db: Session = Depends(get_db))
 
     if third_match:
         semifinal_round = max(third_match.round - 1, 1)
-        semifinal_matches = [
-            match
-            for (round_key, _), match in created_by_round_position.items()
-            if round_key == semifinal_round
-        ]
-        semifinal_matches = sorted(semifinal_matches, key=lambda match: match.id)[:2]
+        semifinal_matches = sorted(
+            (
+                (position, match)
+                for (round_key, position), match in created_by_round_position.items()
+                if round_key == semifinal_round
+            ),
+            key=lambda item: item[0],
+        )
+        semifinal_matches = [match for _, match in semifinal_matches[:2]]
         if len(semifinal_matches) >= 2:
             third_match.prerequisite_match_home_id = semifinal_matches[0].id
             third_match.prerequisite_match_away_id = semifinal_matches[1].id
 
     db.commit()
     db.refresh(final_group)
-    return {"gender": gender_upper, "matches": _serialize_bracket_matches(list(final_group.matches), gender_upper)}
+    return {
+        "gender": gender_upper,
+        "target_size": int(selection["target_size"]),
+        "direct_count": len(selection["direct_qualifiers"]),
+        "wildcard_count": len(selection["wildcards"]),
+        "warnings": warnings,
+        "matches": _serialize_bracket_matches(list(final_group.matches), gender_upper),
+    }
 
 
 @router.post("/{tid}/bracket/{gender}/advance")
@@ -213,12 +431,6 @@ def advance_bracket_match(tid: str, gender: str, payload: BracketAdvancePayload,
     loser_team_id = match.team_away_id if payload.winner_team_id == match.team_home_id else match.team_home_id
     match.status = MatchStatus.PLAYED
 
-    affected_team_ids = [payload.winner_team_id]
-    if loser_team_id:
-        affected_team_ids.append(loser_team_id)
-    teams = db.query(Team).filter(Team.id.in_(affected_team_ids)).all()
-    teams_by_id = {team.id: team for team in teams}
-
     downstream_matches = (
         db.query(Match)
         .filter(
@@ -234,14 +446,11 @@ def advance_bracket_match(tid: str, gender: str, payload: BracketAdvancePayload,
         if not propagate_team_id:
             continue
 
-        team_name = teams_by_id.get(propagate_team_id).name if teams_by_id.get(propagate_team_id) else None
         if downstream.prerequisite_match_home_id == match.id:
             downstream.team_home_id = propagate_team_id
-            downstream.placeholder_home = team_name or downstream.placeholder_home
             updated_ids.append(downstream.id)
         if downstream.prerequisite_match_away_id == match.id:
             downstream.team_away_id = propagate_team_id
-            downstream.placeholder_away = team_name or downstream.placeholder_away
             updated_ids.append(downstream.id)
 
     db.commit()

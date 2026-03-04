@@ -8,6 +8,7 @@ import type { BracketMatch } from "../types";
 
 function phaseLabel(phase: string) {
   const normalized = (phase || "").toLowerCase();
+  if (normalized === "round16") return "Ottavi";
   if (normalized === "quarter") return "Quarti";
   if (normalized === "semi") return "Semifinale";
   if (normalized === "final") return "Finale";

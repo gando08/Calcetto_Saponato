@@ -11,6 +11,8 @@ export const tournamentApi = {
   update: (id: string, data: unknown) => api.put(`/api/tournaments/${id}`, data).then((r) => r.data),
   delete: (id: string) => api.delete(`/api/tournaments/${id}`),
   addDay: (id: string, data: unknown) => api.post(`/api/tournaments/${id}/days`, data).then((r) => r.data),
+  getDays: (id: string) => api.get(`/api/tournaments/${id}/days`).then((r) => r.data),
+  replaceDays: (id: string, days: unknown[]) => api.put(`/api/tournaments/${id}/days`, { days }).then((r) => r.data),
   getSlots: (id: string) => api.get(`/api/tournaments/${id}/slots`).then((r) => r.data),
   generateGroups: (id: string) => api.post(`/api/tournaments/${id}/groups/generate`).then((r) => r.data),
   getGroups: (id: string) => api.get(`/api/tournaments/${id}/groups`).then((r) => r.data),

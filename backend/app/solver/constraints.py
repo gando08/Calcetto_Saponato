@@ -41,10 +41,7 @@ def compute_soft_penalty(
                 penalty += weights.get("pref_window_violation", 8)
 
         schedule = team_schedules.get(team_id, [])
-        if schedule and not prefs.get("prefers_consecutive", False):
-            if slot_index - 1 in schedule or slot_index + 1 in schedule:
-                penalty += weights.get("consecutive_penalty", 5)
-
+    
     position = slot_index / max(total_slots - 1, 1)
     if position == 0.0 or position == 1.0:
         penalty += weights.get("equity_imbalance", 3)
