@@ -113,19 +113,23 @@ async def import_teams(tid: str, file: UploadFile = File(...), db: Session = Dep
     _check_team_limits(tournament, db, adding=len(rows))
 
     imported = []
-    for row in rows:
+    for i, row in enumerate(rows, start=1):
+        # Fix #5: row["nome"] raises KeyError on malformed CSV; use .get() and validate.
+        name = row.get("nome", "").strip()
+        if not name:
+            raise HTTPException(400, f"Riga {i}: campo 'nome' mancante o vuoto nel CSV")
         preferred_days = row.get("giorni_preferiti", "").split(";") if row.get("giorni_preferiti") else []
         preferred_days = _strip_finals_days_preferences(tid, preferred_days, db)
         team_data: dict = {
             "tournament_id": tid,
-            "name": row["nome"],
+            "name": name,
             "gender": row.get("genere", "M"),
             "preferred_days": preferred_days,
         }
         team_data = _apply_tournament_gender(tournament, team_data)
         team = Team(**team_data)
         db.add(team)
-        imported.append(row["nome"])
+        imported.append(name)
 
     db.commit()
     return {"imported": len(imported), "teams": imported}

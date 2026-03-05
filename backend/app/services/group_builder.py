@@ -1,5 +1,6 @@
-import math
 from typing import Dict, List
+
+from app.solver.sa_group_builder import SAGroupBuilder
 
 
 def compute_overlap_score(team_a: Dict, team_b: Dict, all_slots: List[str]) -> float:
@@ -15,33 +16,11 @@ def compute_overlap_score(team_a: Dict, team_b: Dict, all_slots: List[str]) -> f
     return overlap / len(all_slots)
 
 
-def build_groups(teams: List[Dict], teams_per_group: int, all_slot_ids: List[str]) -> List[List[Dict]]:
-    n_groups = math.ceil(len(teams) / teams_per_group)
-    groups: List[List[Dict]] = [[] for _ in range(n_groups)]
-
-    sorted_teams = sorted(
-        teams,
-        key=lambda team: len(team.get("unavailable_slot_ids", [])),
-        reverse=True,
-    )
-
-    for team in sorted_teams:
-        best_group = 0
-        best_score = -1.0
-        for i, group in enumerate(groups):
-            if len(group) >= teams_per_group:
-                continue
-            if not group:
-                score = 0.5
-            else:
-                scores = [compute_overlap_score(team, member, all_slot_ids) for member in group]
-                score = sum(scores) / len(scores)
-            if score > best_score:
-                best_score = score
-                best_group = i
-        groups[best_group].append(team)
-
-    return [group for group in groups if group]
+def build_groups(
+    teams: List[Dict], teams_per_group: int, all_slot_ids: List[str]
+) -> List[List[Dict]]:
+    """Build groups via Simulated Annealing + LNS (maximises intra-group slot compatibility)."""
+    return SAGroupBuilder().build_groups(teams, teams_per_group, all_slot_ids)
 
 
 def build_compatibility_matrix(teams: List[Dict], all_slot_ids: List[str]) -> Dict:

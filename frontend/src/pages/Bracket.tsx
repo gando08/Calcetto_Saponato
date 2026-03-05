@@ -4,7 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { tournamentApi } from "../api/client";
 import { useTournamentStore } from "../store/tournament";
-import type { BracketMatch, BracketTeam } from "../types/index";
+import type { BracketMatch, BracketTeam, Tournament } from "../types/index";
+import { buildTournamentPairs } from "../utils/tournamentPairs";
 
 // ── Label helpers ──────────────────────────────────────────────────────────
 
@@ -441,6 +442,7 @@ function BracketColumn({
 export function Bracket() {
   const queryClient = useQueryClient();
   const { current, setCurrent } = useTournamentStore();
+  const [selectedPairKey, setSelectedPairKey] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [manualPicker, setManualPicker] = useState<"M" | "F" | null>(null);
 
@@ -448,60 +450,84 @@ export function Bracket() {
     queryKey: ["tournaments"],
     queryFn: () => tournamentApi.list()
   });
+  const tournaments = (tournamentsQuery.data || []) as Tournament[];
+  const pairs = useMemo(() => buildTournamentPairs(tournaments), [tournaments]);
+  const selectedPair = useMemo(() => pairs.find((p) => p.key === selectedPairKey) ?? null, [pairs, selectedPairKey]);
 
+  // Sync selectedPairKey with current tournament
   useEffect(() => {
-    if (!current && tournamentsQuery.data?.length) setCurrent(tournamentsQuery.data[0]);
-  }, [current, setCurrent, tournamentsQuery.data]);
+    if (!pairs.length) { if (selectedPairKey) setSelectedPairKey(""); return; }
+    if (selectedPairKey && pairs.some((p) => p.key === selectedPairKey)) return;
+    const fromCurrent = current ? pairs.find((p) => p.male?.id === current.id || p.female?.id === current.id) : null;
+    setSelectedPairKey((fromCurrent || pairs[0]).key);
+  }, [current?.id, pairs, selectedPairKey]);
 
-  const tid = current?.id || "";
+  // Keep current in sync (set to male if available, otherwise female)
+  useEffect(() => {
+    if (!selectedPair) return;
+    const t = selectedPair.male || selectedPair.female;
+    if (t && current?.id !== t.id) setCurrent(t);
+  }, [selectedPair, current?.id, setCurrent]);
+
+  const maleTid = selectedPair?.male?.id || "";
+  const femaleTid = selectedPair?.female?.id || "";
 
   const bracketMQuery = useQuery({
-    queryKey: ["bracket", tid, "M"],
-    queryFn: () => tournamentApi.getBracket(tid, "M"),
-    enabled: Boolean(tid)
+    queryKey: ["bracket", maleTid, "M"],
+    queryFn: () => tournamentApi.getBracket(maleTid, "M"),
+    enabled: Boolean(maleTid)
   });
 
   const bracketFQuery = useQuery({
-    queryKey: ["bracket", tid, "F"],
-    queryFn: () => tournamentApi.getBracket(tid, "F"),
-    enabled: Boolean(tid)
+    queryKey: ["bracket", femaleTid, "F"],
+    queryFn: () => tournamentApi.getBracket(femaleTid, "F"),
+    enabled: Boolean(femaleTid)
   });
 
   // Teams with qualification status — queried lazily when picker is opened
   const teamsQueryM = useQuery({
-    queryKey: ["bracketTeams", tid, "M"],
-    queryFn: () => tournamentApi.getBracketTeams(tid, "M") as Promise<BracketTeam[]>,
-    enabled: Boolean(tid) && manualPicker === "M",
+    queryKey: ["bracketTeams", maleTid, "M"],
+    queryFn: () => tournamentApi.getBracketTeams(maleTid, "M") as Promise<BracketTeam[]>,
+    enabled: Boolean(maleTid) && manualPicker === "M",
   });
 
   const teamsQueryF = useQuery({
-    queryKey: ["bracketTeams", tid, "F"],
-    queryFn: () => tournamentApi.getBracketTeams(tid, "F") as Promise<BracketTeam[]>,
-    enabled: Boolean(tid) && manualPicker === "F",
+    queryKey: ["bracketTeams", femaleTid, "F"],
+    queryFn: () => tournamentApi.getBracketTeams(femaleTid, "F") as Promise<BracketTeam[]>,
+    enabled: Boolean(femaleTid) && manualPicker === "F",
   });
 
   const generateMutation = useMutation({
-    mutationFn: ({ gender, force }: { gender: "M" | "F"; force: boolean }) =>
-      tournamentApi.generateBracket(tid, gender, force),
+    mutationFn: ({ gender, force }: { gender: "M" | "F"; force: boolean }) => {
+      const gtid = gender === "M" ? maleTid : femaleTid;
+      return tournamentApi.generateBracket(gtid, gender, force);
+    },
     onSuccess: async (_, vars) => {
-      await queryClient.invalidateQueries({ queryKey: ["bracket", tid, vars.gender] });
+      const gtid = vars.gender === "M" ? maleTid : femaleTid;
+      await queryClient.invalidateQueries({ queryKey: ["bracket", gtid, vars.gender] });
     }
   });
 
   const manualMutation = useMutation({
-    mutationFn: ({ gender, teamIds }: { gender: "M" | "F"; teamIds: string[] }) =>
-      tournamentApi.generateBracketManual(tid, gender, teamIds),
+    mutationFn: ({ gender, teamIds }: { gender: "M" | "F"; teamIds: string[] }) => {
+      const gtid = gender === "M" ? maleTid : femaleTid;
+      return tournamentApi.generateBracketManual(gtid, gender, teamIds);
+    },
     onSuccess: async (_, vars) => {
-      await queryClient.invalidateQueries({ queryKey: ["bracket", tid, vars.gender] });
+      const gtid = vars.gender === "M" ? maleTid : femaleTid;
+      await queryClient.invalidateQueries({ queryKey: ["bracket", gtid, vars.gender] });
       setManualPicker(null);
     }
   });
 
   const advanceMutation = useMutation({
-    mutationFn: ({ gender, matchId, winnerTeamId }: { gender: "M" | "F"; matchId: string; winnerTeamId: string }) =>
-      tournamentApi.advanceBracket(tid, gender, matchId, winnerTeamId),
+    mutationFn: ({ gender, matchId, winnerTeamId }: { gender: "M" | "F"; matchId: string; winnerTeamId: string }) => {
+      const gtid = gender === "M" ? maleTid : femaleTid;
+      return tournamentApi.advanceBracket(gtid, gender, matchId, winnerTeamId);
+    },
     onSuccess: async (_, vars) => {
-      await queryClient.invalidateQueries({ queryKey: ["bracket", tid, vars.gender] });
+      const gtid = vars.gender === "M" ? maleTid : femaleTid;
+      await queryClient.invalidateQueries({ queryKey: ["bracket", gtid, vars.gender] });
     }
   });
 
@@ -531,7 +557,8 @@ export function Bracket() {
   }, [teamsQueryF.data, matchesF.length]);
 
   const onGenerate = async (gender: "M" | "F", force = false) => {
-    if (!tid) { setErrorMessage("Seleziona prima un torneo."); return; }
+    const gtid = gender === "M" ? maleTid : femaleTid;
+    if (!gtid) { setErrorMessage(`Sezione ${gender === "M" ? "maschile" : "femminile"} non configurata.`); return; }
     setErrorMessage(null);
     try {
       await generateMutation.mutateAsync({ gender, force });
@@ -542,7 +569,9 @@ export function Bracket() {
   };
 
   const onManualConfirm = async (teamIds: string[]) => {
-    if (!tid || !manualPicker) return;
+    if (!manualPicker) return;
+    const gtid = manualPicker === "M" ? maleTid : femaleTid;
+    if (!gtid) return;
     setErrorMessage(null);
     try {
       await manualMutation.mutateAsync({ gender: manualPicker, teamIds });
@@ -553,7 +582,7 @@ export function Bracket() {
   };
 
   const onAdvance = async (gender: "M" | "F", match: BracketMatch, winnerTeamId: string | null | undefined) => {
-    if (!tid || !winnerTeamId || !match.id) return;
+    if (!winnerTeamId || !match.id) return;
     setErrorMessage(null);
     try {
       await advanceMutation.mutateAsync({ gender, matchId: match.id, winnerTeamId });
@@ -589,23 +618,38 @@ export function Bracket() {
       {errorMessage && <div className="sport-alert-error">{errorMessage}</div>}
 
       {/* Tournament selector */}
-      <section className="rounded-xl p-4"
+      <section className="rounded-xl p-4 flex flex-wrap items-end gap-4"
         style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>
-        <label className="flex flex-col gap-1.5 max-w-md">
+        <label className="flex flex-col gap-1.5">
           <span className="text-[10px] font-semibold uppercase tracking-[0.1em]"
             style={{ color: "rgba(255,255,255,0.35)" }}>
-            Torneo attivo
+            Edizione
           </span>
-          <select className="sport-select" value={current?.id || ""}
-            onChange={(event) => {
-              const selected = (tournamentsQuery.data || []).find((t: { id: string }) => t.id === event.target.value);
-              if (selected) setCurrent(selected);
-            }}>
-            {(tournamentsQuery.data || []).map((tournament: { id: string; name: string }) => (
-              <option key={tournament.id} value={tournament.id}>{tournament.name}</option>
-            ))}
+          <select className="sport-select min-w-52" value={selectedPairKey}
+            onChange={(e) => setSelectedPairKey(e.target.value)}>
+            {pairs.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
           </select>
         </label>
+        {selectedPair && (
+          <div className="flex items-center gap-2 text-xs flex-wrap">
+            {(["M", "F"] as const).map((g) => {
+              const t = g === "M" ? selectedPair.male : selectedPair.female;
+              const color = g === "M" ? "#60a5fa" : "#f472b6";
+              const label = g === "M" ? "Maschile" : "Femminile";
+              return (
+                <span key={g} className="px-2.5 py-1 rounded-lg font-medium"
+                  style={{
+                    background: t ? `${color}12` : "rgba(255,255,255,0.04)",
+                    color: t ? color : "rgba(255,255,255,0.25)",
+                    border: `1px solid ${t ? color + "35" : "rgba(255,255,255,0.07)"}`,
+                  }}>
+                  {g === "M" ? "♂" : "♀"} {label}
+                  {!t && <em className="ml-1">— non configurato</em>}
+                </span>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       {/* Bracket columns */}

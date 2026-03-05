@@ -40,8 +40,9 @@ def compute_soft_penalty(
             if not in_window:
                 penalty += weights.get("pref_window_violation", 8)
 
-        schedule = team_schedules.get(team_id, [])
-    
+        # Fix #10: `team_schedules` is always passed as {} by every call site;
+        # the variable was assigned and never used.  Removed dead assignment.
+
     position = slot_index / max(total_slots - 1, 1)
     if position == 0.0 or position == 1.0:
         penalty += weights.get("equity_imbalance", 3)

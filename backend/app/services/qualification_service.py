@@ -79,17 +79,14 @@ def _resolve_target_size(gender: str, direct_count: int) -> int:
 
 
 def _is_group_phase_closed(groups: Sequence[Dict[str, Any]]) -> bool:
+    # Fix #11: callers always provide a non-empty status string, so the goals
+    # fallback branch was unreachable dead code.  Simplified to a single check.
     for group in groups:
         matches = list(group.get("matches") or [])
         if not matches:
             return False
         for match in matches:
-            status = str(match.get("status", "")).lower()
-            if status:
-                if status != "played":
-                    return False
-                continue
-            if match.get("goals_home") is None or match.get("goals_away") is None:
+            if str(match.get("status", "")).lower() != "played":
                 return False
     return True
 

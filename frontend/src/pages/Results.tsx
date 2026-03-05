@@ -4,7 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { matchApi, tournamentApi } from "../api/client";
 import { useTournamentStore } from "../store/tournament";
-import type { Match, MatchGoal, Scorer, StandingRow } from "../types/index";
+import type { Match, MatchGoal, Scorer, StandingRow, Tournament } from "../types/index";
+import { buildTournamentPairs, getTournamentIdForGender } from "../utils/tournamentPairs";
 
 type ResultDraft = {
   goals_home: number;
@@ -436,6 +437,7 @@ export function Results() {
   const queryClient = useQueryClient();
   const { current, setCurrent } = useTournamentStore();
   const [gender, setGender] = useState<"M" | "F">("M");
+  const [selectedPairKey, setSelectedPairKey] = useState<string>("");
   const [groupTab, setGroupTab] = useState<string>("");
   const [viewTab, setViewTab] = useState<"group" | "team" | "day">("group");
   const [selectedTeamId, setSelectedTeamId] = useState<string>("");
@@ -447,9 +449,35 @@ export function Results() {
   const [showMerge, setShowMerge] = useState(false);
 
   const tournamentsQuery = useQuery({ queryKey: ["tournaments"], queryFn: () => tournamentApi.list() });
+  const tournaments = (tournamentsQuery.data || []) as Tournament[];
+  const pairs = useMemo(() => buildTournamentPairs(tournaments), [tournaments]);
+  const selectedPair = useMemo(() => pairs.find((p) => p.key === selectedPairKey) ?? null, [pairs, selectedPairKey]);
+
+  // Sync selectedPairKey with current tournament
   useEffect(() => {
-    if (!current && tournamentsQuery.data?.length) setCurrent(tournamentsQuery.data[0]);
-  }, [current, setCurrent, tournamentsQuery.data]);
+    if (!pairs.length) { if (selectedPairKey) setSelectedPairKey(""); return; }
+    if (selectedPairKey && pairs.some((p) => p.key === selectedPairKey)) return;
+    const fromCurrent = current ? pairs.find((p) => p.male?.id === current.id || p.female?.id === current.id) : null;
+    setSelectedPairKey((fromCurrent || pairs[0]).key);
+  }, [current?.id, pairs, selectedPairKey]);
+
+  // When pair or gender changes, update current to the matching tournament
+  useEffect(() => {
+    if (!selectedPair) return;
+    const targetId = getTournamentIdForGender(selectedPair, gender) || selectedPair.male?.id || selectedPair.female?.id || "";
+    const t = tournaments.find((x) => x.id === targetId);
+    if (t && current?.id !== t.id) setCurrent(t);
+  }, [selectedPair, gender, tournaments, current?.id, setCurrent]);
+
+  const handleGenderChange = (g: "M" | "F") => {
+    setGender(g);
+    setGroupTab("");
+    if (!selectedPair) return;
+    const targetId = getTournamentIdForGender(selectedPair, g);
+    if (!targetId) return;
+    const t = tournaments.find((x) => x.id === targetId);
+    if (t) setCurrent(t);
+  };
 
   const tid = current?.id || "";
   const scheduleQuery = useQuery({
@@ -639,21 +667,16 @@ export function Results() {
       {/* Controls */}
       <div className="sport-card p-5 flex flex-wrap gap-3 items-end">
         <div className="flex flex-col gap-1">
-          <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "rgba(255,255,255,0.35)" }}>Torneo attivo</span>
-          <select className="sport-select min-w-52" value={current?.id || ""}
-            onChange={(e) => {
-              const selected = (tournamentsQuery.data || []).find((t: { id: string }) => t.id === e.target.value);
-              if (selected) setCurrent(selected);
-            }}>
-            {(tournamentsQuery.data || []).map((t: { id: string; name: string }) => (
-              <option key={t.id} value={t.id}>{t.name}</option>
-            ))}
+          <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "rgba(255,255,255,0.35)" }}>Edizione</span>
+          <select className="sport-select min-w-52" value={selectedPairKey}
+            onChange={(e) => setSelectedPairKey(e.target.value)}>
+            {pairs.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
           </select>
         </div>
 
         <div className="flex gap-2">
           {(["M", "F"] as const).map((g) => (
-            <button key={g} type="button" onClick={() => setGender(g)}
+            <button key={g} type="button" onClick={() => handleGenderChange(g)}
               className="px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200"
               style={genderActiveStyle(g)}>
               {g === "M" ? "Maschile" : "Femminile"}

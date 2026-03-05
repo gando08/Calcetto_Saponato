@@ -17,7 +17,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { scheduleApi, tournamentApi } from "../api/client";
 import { useTournamentStore } from "../store/tournament";
-import type { Match, ScheduleQuality, Slot } from "../types";
+import type { Match, ScheduleQuality, Slot, Tournament } from "../types";
+import { buildTournamentPairs, getTournamentIdForGender } from "../utils/tournamentPairs";
 
 type MatchHealth = { level: "ok" | "soft" | "hard"; hard: string[]; soft: string[] };
 
@@ -127,10 +128,35 @@ export function Schedule() {
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [selectedTeamId, setSelectedTeamId] = useState<string>("");
   const [selectedGroup, setSelectedGroup] = useState<string>("");
+  const [selectedPairKey, setSelectedPairKey] = useState<string>("");
+  const [primaryGender, setPrimaryGender] = useState<"M" | "F">("M");
   const generateStartedAt = useRef<number>(0);
 
   const tournamentsQuery = useQuery({ queryKey: ["tournaments"], queryFn: () => tournamentApi.list() });
-  useEffect(() => { if (!current && tournamentsQuery.data?.length) setCurrent(tournamentsQuery.data[0]); }, [current, setCurrent, tournamentsQuery.data]);
+  const tournaments = (tournamentsQuery.data || []) as Tournament[];
+  const pairs = useMemo(() => buildTournamentPairs(tournaments), [tournaments]);
+  const selectedPair = useMemo(() => pairs.find((p) => p.key === selectedPairKey) ?? null, [pairs, selectedPairKey]);
+
+  // Sync selectedPairKey with current tournament
+  useEffect(() => {
+    if (!pairs.length) { if (selectedPairKey) setSelectedPairKey(""); return; }
+    if (selectedPairKey && pairs.some((p) => p.key === selectedPairKey)) return;
+    const fromCurrent = current ? pairs.find((p) => p.male?.id === current.id || p.female?.id === current.id) : null;
+    setSelectedPairKey((fromCurrent || pairs[0]).key);
+  }, [current?.id, pairs, selectedPairKey]);
+
+  // When pair or primaryGender changes, update current
+  useEffect(() => {
+    if (!selectedPair) return;
+    const targetId = getTournamentIdForGender(selectedPair, primaryGender) || selectedPair.male?.id || selectedPair.female?.id || "";
+    const t = tournaments.find((x) => x.id === targetId);
+    if (t && current?.id !== t.id) { setCurrent(t); setCompanionTids([]); }
+  }, [selectedPair, primaryGender, tournaments, current?.id, setCurrent]);
+
+  const handleGenderChange = (g: "M" | "F") => {
+    setPrimaryGender(g);
+    setCompanionTids([]);
+  };
 
   const tid = current?.id || "";
   const slotsQuery = useQuery({ queryKey: ["slots", tid], queryFn: () => tournamentApi.getSlots(tid), enabled: Boolean(tid) });
@@ -300,30 +326,52 @@ export function Schedule() {
       <div className="sport-card p-5 space-y-4">
         <div className="flex flex-wrap gap-3 items-end">
           <div className="flex flex-col gap-1">
-            <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "rgba(255,255,255,0.35)" }}>Torneo attivo</span>
-            <select className="sport-select min-w-52" value={current?.id || ""}
-              onChange={(e) => { const s = (tournamentsQuery.data || []).find((t: { id: string }) => t.id === e.target.value); if (s) setCurrent(s); }}>
-              {(tournamentsQuery.data || []).map((t: { id: string; name: string }) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "rgba(255,255,255,0.35)" }}>Edizione</span>
+            <select className="sport-select min-w-52" value={selectedPairKey}
+              onChange={(e) => setSelectedPairKey(e.target.value)}>
+              {pairs.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
             </select>
           </div>
 
-          {(tournamentsQuery.data || []).filter((t: { id: string }) => t.id !== tid).length > 0 && (
-            <div className="flex flex-col gap-1">
-              <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "rgba(255,255,255,0.35)" }}>Pianifica insieme a</span>
-              <div className="flex flex-wrap gap-2">
-                {(tournamentsQuery.data || []).filter((t: { id: string }) => t.id !== tid).map((t: { id: string; name: string }) => (
-                  <label key={t.id} className="flex items-center gap-2 text-sm cursor-pointer px-3 py-2 rounded-xl transition-all duration-200"
-                    style={companionTids.includes(t.id)
-                      ? { background: "rgba(0,230,118,0.1)", color: "#00e676", border: "1px solid rgba(0,230,118,0.25)" }
-                      : { background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.5)", border: "1px solid rgba(255,255,255,0.08)" }}>
-                    <input type="checkbox" className="hidden" checked={companionTids.includes(t.id)}
-                      onChange={(e) => setCompanionTids((curr) => e.target.checked ? [...curr, t.id] : curr.filter((id) => id !== t.id))} />
-                    {t.name}
-                  </label>
-                ))}
-              </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "rgba(255,255,255,0.35)" }}>Sezione principale</span>
+            <div className="flex gap-2">
+              {(["M", "F"] as const).map((g) => {
+                const available = Boolean(g === "M" ? selectedPair?.male : selectedPair?.female);
+                const isActive = primaryGender === g;
+                const color = g === "M" ? "#60a5fa" : "#f472b6";
+                return (
+                  <button key={g} type="button" onClick={() => handleGenderChange(g)} disabled={!available}
+                    className="px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-200"
+                    style={isActive
+                      ? { background: `${color}20`, color, border: `1px solid ${color}55` }
+                      : { background: "rgba(255,255,255,0.04)", color: available ? "rgba(255,255,255,0.45)" : "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.08)", cursor: available ? "pointer" : "not-allowed" }}>
+                    {g === "M" ? "Maschile" : "Femminile"}
+                  </button>
+                );
+              })}
             </div>
-          )}
+          </div>
+
+          {selectedPair && (() => {
+            const otherId = primaryGender === "M" ? selectedPair.female?.id : selectedPair.male?.id;
+            const otherLabel = primaryGender === "M" ? "Femminile" : "Maschile";
+            if (!otherId) return null;
+            const isChecked = companionTids.includes(otherId);
+            return (
+              <div className="flex flex-col gap-1">
+                <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "rgba(255,255,255,0.35)" }}>Pianifica insieme a</span>
+                <label className="flex items-center gap-2 text-sm cursor-pointer px-3 py-2 rounded-xl transition-all duration-200"
+                  style={isChecked
+                    ? { background: "rgba(0,230,118,0.1)", color: "#00e676", border: "1px solid rgba(0,230,118,0.25)" }
+                    : { background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.5)", border: "1px solid rgba(255,255,255,0.08)" }}>
+                  <input type="checkbox" className="hidden" checked={isChecked}
+                    onChange={(e) => setCompanionTids(e.target.checked ? [otherId] : [])} />
+                  {isChecked ? "✓" : ""} Sezione {otherLabel}
+                </label>
+              </div>
+            );
+          })()}
 
           <button className="sport-btn-primary" type="button" onClick={() => void generateMutation.mutateAsync()} disabled={!tid || generateMutation.isPending}>
             {generateMutation.isPending ? "Generazione..." : "Genera calendario"}

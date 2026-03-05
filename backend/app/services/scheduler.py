@@ -1,3 +1,4 @@
+import threading
 from typing import Callable, Dict, List, Optional
 
 from sqlalchemy.orm import Session
@@ -7,13 +8,17 @@ from app.models.match import Match, MatchStatus
 from app.models.slot import Day, Slot
 from app.models.team import Team
 from app.models.tournament import Tournament
-from app.solver.cp_sat_solver import TournamentScheduler
+from app.solver.lns_sa_scheduler import LNSSAScheduler as TournamentScheduler
 
+# Fix #1: protect the shared dict with a lock to prevent race conditions
+# when two requests call start_scheduling concurrently for the same tournament.
+_solvers_lock = threading.Lock()
 _active_solvers: Dict[str, TournamentScheduler] = {}
 
 
 def get_solver_status(tournament_id: str) -> Dict:
-    solver = _active_solvers.get(tournament_id)
+    with _solvers_lock:
+        solver = _active_solvers.get(tournament_id)
     if not solver:
         return {"status": "idle"}
     return {"status": solver.status, "result": solver.result}
@@ -97,28 +102,39 @@ def start_scheduling(
     config = {"penalty_weights": tournament.penalty_weights or {}}
     solver = TournamentScheduler(config=config, on_progress=on_progress)
 
-    # Register solver under all tournament IDs so apply() works from any of them
-    _active_solvers[tournament_id] = solver
-    for tid in (companion_tids or []):
-        _active_solvers[tid] = solver
+    # Fix #1: lock before registering; also raise 409 if already running
+    with _solvers_lock:
+        existing = _active_solvers.get(tournament_id)
+        if existing and existing.status == "running":
+            raise ValueError("Solver già in esecuzione per questo torneo")
+        _active_solvers[tournament_id] = solver
+        for tid in (companion_tids or []):
+            _active_solvers[tid] = solver
 
     solver.schedule_async(all_matches, all_slots, all_teams)
 
 
 def apply_solution(tournament_id: str, db: Session) -> bool:
-    solver = _active_solvers.get(tournament_id)
+    with _solvers_lock:
+        solver = _active_solvers.get(tournament_id)
     if not solver or solver.status != "done" or not solver.result:
         return False
 
     assignment = solver.result["assignment"]
+
+    # Fix #3: bulk-fetch matches and slots instead of N+1 individual queries.
+    match_ids = list(assignment.keys())
+    slot_ids = list(assignment.values())
+    matches_by_id = {m.id: m for m in db.query(Match).filter(Match.id.in_(match_ids)).all()}
+    slots_by_id = {s.id: s for s in db.query(Slot).filter(Slot.id.in_(slot_ids)).all()}
+
     for match_id, slot_id in assignment.items():
-        match = db.query(Match).filter(Match.id == match_id).first()
+        match = matches_by_id.get(match_id)
         if not match:
             continue
         match.slot_id = slot_id
         match.status = MatchStatus.SCHEDULED
-
-        slot = db.query(Slot).filter(Slot.id == slot_id).first()
+        slot = slots_by_id.get(slot_id)
         if slot:
             slot.is_occupied = True
 

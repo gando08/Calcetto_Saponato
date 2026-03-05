@@ -19,7 +19,9 @@ _ws_clients: Dict[str, List[WebSocket]] = {}
 
 
 async def broadcast(tournament_id: str, data: dict) -> None:
-    for ws in _ws_clients.get(tournament_id, []):
+    # Fix #2: iterate over a snapshot copy to avoid RuntimeError if the list is
+    # mutated by a concurrent append/remove while we iterate.
+    for ws in list(_ws_clients.get(tournament_id, [])):
         try:
             await ws.send_json(data)
         except Exception:
@@ -34,7 +36,9 @@ async def solver_ws(websocket: WebSocket, tournament_id: str) -> None:
         while True:
             await asyncio.sleep(1)
     except WebSocketDisconnect:
-        _ws_clients[tournament_id].remove(websocket)
+        clients = _ws_clients.get(tournament_id, [])
+        if websocket in clients:
+            clients.remove(websocket)
 
 
 class GenerateBody(BaseModel):
