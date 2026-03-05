@@ -25,15 +25,6 @@ function TeamChip({ team, disabled }: { team: GroupTeamSummary; disabled: boolea
   return (
     <div
       ref={setNodeRef}
-      style={
-        transform
-          ? {
-              transform: CSS.Translate.toString(transform),
-              opacity: isDragging ? 0.5 : 1,
-              zIndex: isDragging ? 999 : undefined
-            }
-          : undefined
-      }
       {...attributes}
       {...listeners}
       className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-all duration-150 select-none ${

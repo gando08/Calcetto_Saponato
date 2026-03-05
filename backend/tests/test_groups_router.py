@@ -58,6 +58,26 @@ def seed_tournament_for_manual_groups() -> tuple[str, SessionLocal]:
     return tournament.id, db
 
 
+def seed_tournament_with_five_female_teams() -> tuple[str, SessionLocal]:
+    db = SessionLocal()
+    tournament = Tournament(name="Test Female Balancing", teams_per_group=4)
+    db.add(tournament)
+    db.flush()
+
+    for idx in range(5):
+        db.add(
+            Team(
+                tournament_id=tournament.id,
+                name=f"Team F{idx + 1}",
+                gender=Gender.F,
+                unavailable_slot_ids=[],
+            )
+        )
+
+    db.commit()
+    return tournament.id, db
+
+
 def test_generate_groups_creates_groups_and_matches() -> None:
     tid, db = seed_tournament_with_teams()
     try:
@@ -77,6 +97,20 @@ def test_generate_groups_creates_groups_and_matches() -> None:
         for group in groups_payload:
             assert len(group["teams"]) == 4
             assert len(group["matches"]) == 6
+    finally:
+        db.close()
+
+
+def test_generate_groups_avoids_single_team_female_group() -> None:
+    tid, db = seed_tournament_with_five_female_teams()
+    try:
+        res = client.post(f"/api/tournaments/{tid}/groups/generate")
+        assert res.status_code == 200
+
+        groups_payload = client.get(f"/api/tournaments/{tid}/groups").json()
+        female_groups = [group for group in groups_payload if group["gender"] == "F"]
+        assert len(female_groups) == 2
+        assert min(len(group["teams"]) for group in female_groups) >= 2
     finally:
         db.close()
 

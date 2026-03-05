@@ -1,3 +1,5 @@
+import math
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -8,6 +10,7 @@ from app.models.match import Match, MatchPhase
 from app.models.slot import Day, Slot
 from app.models.team import Team
 from app.models.tournament import Tournament, TournamentStatus
+from app.services.group_balancing import build_balanced_groups, is_bye_team_id
 from app.services.group_builder import build_compatibility_matrix, build_groups
 from app.services.round_robin import generate_round_robin
 
@@ -58,10 +61,19 @@ def generate_groups(tid: str, db: Session = Depends(get_db)) -> dict:
             }
             for team in teams
         ]
-        grouped_teams = build_groups(team_dicts, teams_per_group, slot_ids)
         teams_by_id = {team.id: team for team in teams}
+        grouped_team_slots: list[list[str]]
 
-        for index, grouped in enumerate(grouped_teams):
+        if gender == "F":
+            # Keep female groups balanced by padding with virtual BYE slots.
+            group_count = max(1, math.ceil(len(team_dicts) / teams_per_group))
+            ordered_ids = [item["id"] for item in team_dicts]
+            grouped_team_slots, _ = build_balanced_groups(ordered_ids, group_count)
+        else:
+            grouped_teams = build_groups(team_dicts, teams_per_group, slot_ids)
+            grouped_team_slots = [[item["id"] for item in grouped] for grouped in grouped_teams]
+
+        for index, grouped_slots in enumerate(grouped_team_slots):
             letter = chr(ord("A") + index)
             group = Group(
                 tournament_id=tid,
@@ -69,13 +81,15 @@ def generate_groups(tid: str, db: Session = Depends(get_db)) -> dict:
                 gender=gender,
                 phase=GroupPhase.GROUP,
             )
-            group.teams = [teams_by_id[team_data["id"]] for team_data in grouped]
+            real_team_ids = [team_id for team_id in grouped_slots if team_id in teams_by_id]
+            group.teams = [teams_by_id[team_id] for team_id in real_team_ids]
             db.add(group)
             db.flush()
             groups_created += 1
 
-            team_ids = [team_data["id"] for team_data in grouped]
-            for team_home_id, team_away_id in generate_round_robin(team_ids):
+            for team_home_id, team_away_id in generate_round_robin(grouped_slots):
+                if is_bye_team_id(team_home_id) or is_bye_team_id(team_away_id):
+                    continue
                 db.add(
                     Match(
                         group_id=group.id,

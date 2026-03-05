@@ -222,7 +222,6 @@ export function Teams() {
   const queryClient = useQueryClient();
   const { current, setCurrent } = useTournamentStore();
   const [selectedPairKey, setSelectedPairKey] = useState("");
-  const [genderFilter, setGenderFilter] = useState<"ALL" | "M" | "F">("ALL");
   const [importGender, setImportGender] = useState<"M" | "F">("M");
   const [form, setForm] = useState<TeamFormState>(EMPTY_FORM);
   const [editingTeam, setEditingTeam] = useState<Team | null>(null);
@@ -287,7 +286,6 @@ export function Teams() {
   const days = (daysQuery.data || []) as TournamentDay[];
   const nonFinalDays = days.filter((d) => !d.is_finals_day);
   const teamsLoading = (maleTid ? teamsMaleQuery.isLoading : false) || (femaleTid ? teamsFemaleQuery.isLoading : false);
-  const filteredTeams = useMemo(() => genderFilter === "ALL" ? teams : teams.filter((t) => t.gender === genderFilter), [genderFilter, teams]);
   const maleCount = teams.filter((t) => t.gender === "M").length;
   const femaleCount = teams.filter((t) => t.gender === "F").length;
   const csvTemplateUrl = importTid ? `${String(api.defaults.baseURL ?? "http://localhost:8000")}/api/tournaments/${importTid}/teams/csv-template` : "";
@@ -400,31 +398,13 @@ export function Teams() {
 
         {/* Stats bar */}
         <div className="flex items-center gap-3 flex-wrap">
-          {[
-            { label: "Tutti", value: "ALL", count: maleCount + femaleCount, max: null as number | null | undefined, color: "rgba(255,255,255,0.6)" },
-            { label: "Maschile", value: "M", count: maleCount, max: selectedPair?.male?.max_teams, color: "#60a5fa" },
-            { label: "Femminile", value: "F", count: femaleCount, max: selectedPair?.female?.max_teams, color: "#f472b6" },
-          ].map(({ label, value, count, max, color }) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setGenderFilter(value as "ALL" | "M" | "F")}
-              className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold transition-all duration-200"
-              style={
-                genderFilter === value
-                  ? { background: `${color}18`, color, border: `1px solid ${color}40` }
-                  : { background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.4)", border: "1px solid rgba(255,255,255,0.07)" }
-              }
-            >
-              <span>{label}</span>
-              <span
-                className="text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[22px] text-center"
-                style={genderFilter === value ? { background: `${color}25` } : { background: "rgba(255,255,255,0.08)" }}
-              >
-                {max ? `${count}/${max}` : count}
-              </span>
-            </button>
-          ))}
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold"
+            style={{ background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.65)", border: "1px solid rgba(255,255,255,0.07)" }}>
+            Totale squadre
+            <span className="text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[22px] text-center" style={{ background: "rgba(255,255,255,0.08)" }}>
+              {maleCount + femaleCount}
+            </span>
+          </div>
 
           {selectedPair && (
             <div className="ml-auto flex items-center gap-2 flex-wrap">
@@ -509,7 +489,7 @@ export function Teams() {
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {[1, 2, 3, 4].map((i) => <div key={i} className="sport-skeleton h-36" />)}
         </div>
-      ) : filteredTeams.length === 0 ? (
+      ) : teams.length === 0 ? (
         <div className="sport-card p-8 text-center" style={{ color: "rgba(255,255,255,0.35)" }}>
           <div className="text-3xl mb-3">👥</div>
           <div className="font-semibold">Nessuna squadra disponibile</div>
@@ -517,7 +497,7 @@ export function Teams() {
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {filteredTeams.map((team) => (
+          {teams.map((team) => (
             <TeamCard
               key={team.id}
               team={team}
