@@ -24,6 +24,8 @@ export const tournamentApi = {
   getSchedule: (id: string) => api.get(`/api/tournaments/${id}/schedule`).then((r) => r.data),
   getScheduleStatus: (id: string) => api.get(`/api/tournaments/${id}/schedule/status`).then((r) => r.data),
   applySchedule: (id: string) => api.post(`/api/tournaments/${id}/schedule/apply`).then((r) => r.data),
+  saveSchedule: (id: string) => api.post(`/api/tournaments/${id}/schedule/save`).then((r) => r.data),
+  unscheduleAll: (id: string) => api.post(`/api/tournaments/${id}/schedule/unschedule-all`).then((r) => r.data),
   getStandings: (id: string, gender: string) => api.get(`/api/tournaments/${id}/standings/${gender}`).then((r) => r.data),
   getScorers: (id: string, gender?: string) =>
     api.get(`/api/tournaments/${id}/standings/scorers`, { params: { gender } }).then((r) => r.data),
@@ -70,5 +72,7 @@ export const scheduleApi = {
   patchMatchSlot: (mid: string, slot_id: string) =>
     api.patch(`/api/matches/${mid}/slot`, { slot_id }).then((r) => r.data),
   patchMatchLock: (mid: string, locked: boolean) =>
-    api.patch(`/api/matches/${mid}/lock`, { locked }).then((r) => r.data)
+    api.patch(`/api/matches/${mid}/lock`, { locked }).then((r) => r.data),
+  unscheduleMatch: (mid: string) =>
+    api.patch(`/api/matches/${mid}/unschedule`).then((r) => r.data),
 };

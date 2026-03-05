@@ -93,5 +93,5 @@ export function getTournamentIdForGender(pair: TournamentPair | null, gender: To
 
 export function buildGenderTournamentName(baseName: string, year: number, gender: TournamentGender) {
   const normalizedBase = normalizeSpaces(baseName || "Torneo Calcetto Saponato");
-  return `${normalizedBase} ${year} (${gender})`;
+  return `${normalizedBase} ${year} - ${gender === "M" ? "Maschile" : "Femminile"}`;
 }

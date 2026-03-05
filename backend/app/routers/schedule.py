@@ -11,7 +11,8 @@ from app.models.group import Group
 from app.models.match import Match, MatchStatus
 from app.models.slot import Slot
 from app.models.team import Team
-from app.services.scheduler import apply_solution, get_solver_status, start_scheduling
+from app.services import scheduler as scheduler_service
+from app.services.tournament_pairing import resolve_pair_tournament_ids
 
 router = APIRouter(prefix="/api/tournaments", tags=["schedule"])
 manual_router = APIRouter(prefix="/api/matches", tags=["schedule"])
@@ -71,20 +72,24 @@ async def generate_schedule(
     body: GenerateBody = Body(default_factory=GenerateBody),
     db: Session = Depends(get_db),
 ) -> dict:
+    pair_ids = resolve_pair_tournament_ids(tid, db)
+    auto_companion_ids = [x for x in pair_ids if x != tid]
+    requested_companions = [x for x in (body.companion_tournament_ids or []) if x and x != tid]
+    companion_ids = list(dict.fromkeys([*auto_companion_ids, *requested_companions]))
     loop = asyncio.get_event_loop()
-    all_tids = [tid] + (body.companion_tournament_ids or [])
+    all_tids = [tid] + companion_ids
 
     def on_progress(data: dict) -> None:
         for broadcast_tid in all_tids:
             asyncio.run_coroutine_threadsafe(broadcast(broadcast_tid, data), loop)
 
-    start_scheduling(tid, db, on_progress, companion_tids=body.companion_tournament_ids)
+    scheduler_service.start_scheduling(tid, db, on_progress, companion_tids=companion_ids)
     return {"status": "started"}
 
 
 @router.get("/{tid}/schedule/status")
 def schedule_status(tid: str) -> dict:
-    return get_solver_status(tid)
+    return scheduler_service.get_solver_status(tid)
 
 
 @router.get("/{tid}/schedule/quality")
@@ -238,10 +243,48 @@ def schedule_quality(tid: str, db: Session = Depends(get_db)) -> dict:
 
 @router.post("/{tid}/schedule/apply")
 def apply_schedule(tid: str, db: Session = Depends(get_db)) -> dict:
-    success = apply_solution(tid, db)
-    if not success:
+    return save_schedule(tid, db)
+
+
+@router.post("/{tid}/schedule/save")
+def save_schedule(tid: str, db: Session = Depends(get_db)) -> dict:
+    pair_ids = resolve_pair_tournament_ids(tid, db)
+    saved = 0
+    for pair_tid in pair_ids:
+        if scheduler_service.apply_solution(pair_tid, db):
+            saved += 1
+    if saved == 0:
         raise HTTPException(400, "Nessuna soluzione disponibile")
-    return {"ok": True}
+    return {"ok": True, "saved_tournaments": saved}
+
+
+@router.post("/{tid}/schedule/unschedule-all")
+def unschedule_all(tid: str, db: Session = Depends(get_db)) -> dict:
+    pair_ids = resolve_pair_tournament_ids(tid, db)
+    matches = (
+        db.query(Match)
+        .join(Group, Match.group_id == Group.id)
+        .filter(Group.tournament_id.in_(pair_ids))
+        .all()
+    )
+
+    unscheduled = 0
+    skipped_played = 0
+    for match in matches:
+        if match.status == MatchStatus.PLAYED:
+            skipped_played += 1
+            continue
+        if match.slot_id:
+            previous_slot = db.query(Slot).filter(Slot.id == match.slot_id).first()
+            if previous_slot:
+                previous_slot.is_occupied = False
+        match.slot_id = None
+        match.is_manually_locked = False
+        match.status = MatchStatus.PENDING
+        unscheduled += 1
+
+    db.commit()
+    return {"ok": True, "unscheduled_matches": unscheduled, "skipped_played_matches": skipped_played}
 
 
 @router.get("/{tid}/schedule")
@@ -297,6 +340,8 @@ def reassign_match_slot(mid: str, payload: MatchSlotPatch, db: Session = Depends
     match = db.query(Match).filter(Match.id == mid).first()
     if not match:
         raise HTTPException(404, "Partita non trovata")
+    if match.status == MatchStatus.PLAYED:
+        raise HTTPException(400, "Partita già giocata: modifica non consentita")
     if match.is_manually_locked:
         raise HTTPException(400, "Partita bloccata")
 
@@ -330,7 +375,31 @@ def set_match_lock(mid: str, payload: MatchLockPatch, db: Session = Depends(get_
     match = db.query(Match).filter(Match.id == mid).first()
     if not match:
         raise HTTPException(404, "Partita non trovata")
+    if match.status == MatchStatus.PLAYED:
+        raise HTTPException(400, "Partita già giocata: modifica non consentita")
 
     match.is_manually_locked = payload.locked
     db.commit()
     return {"ok": True, "match_id": mid, "locked": payload.locked}
+
+
+@manual_router.patch("/{mid}/unschedule")
+def unschedule_match(mid: str, db: Session = Depends(get_db)) -> dict:
+    match = db.query(Match).filter(Match.id == mid).first()
+    if not match:
+        raise HTTPException(404, "Partita non trovata")
+    if match.status == MatchStatus.PLAYED:
+        raise HTTPException(400, "Partita già giocata: modifica non consentita")
+
+    previous_slot_id = match.slot_id
+    match.slot_id = None
+    match.is_manually_locked = False
+    match.status = MatchStatus.PENDING
+
+    if previous_slot_id:
+        previous_slot = db.query(Slot).filter(Slot.id == previous_slot_id).first()
+        if previous_slot:
+            previous_slot.is_occupied = False
+
+    db.commit()
+    return {"ok": True, "match_id": mid}

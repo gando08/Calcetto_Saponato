@@ -435,7 +435,6 @@ function GoalsPanel({
 export function Results() {
   const queryClient = useQueryClient();
   const { current, setCurrent } = useTournamentStore();
-  const [gender, setGender] = useState<"M" | "F">("M");
   const [groupTab, setGroupTab] = useState<string>("");
   const [viewTab, setViewTab] = useState<"group" | "team" | "day">("group");
   const [selectedTeamId, setSelectedTeamId] = useState<string>("");
@@ -452,6 +451,7 @@ export function Results() {
   }, [current, setCurrent, tournamentsQuery.data]);
 
   const tid = current?.id || "";
+  const activeGender = (current?.gender || "M") as "M" | "F";
   const scheduleQuery = useQuery({
     queryKey: ["schedule", tid],
     queryFn: () => tournamentApi.getSchedule(tid),
@@ -459,14 +459,14 @@ export function Results() {
     refetchInterval: 20000,
   });
   const standingsQuery = useQuery({
-    queryKey: ["standings", tid, gender],
-    queryFn: () => tournamentApi.getStandings(tid, gender),
+    queryKey: ["standings", tid, activeGender],
+    queryFn: () => tournamentApi.getStandings(tid, activeGender),
     enabled: Boolean(tid),
     refetchInterval: 15000,
   });
   const scorersQuery = useQuery({
-    queryKey: ["scorers", tid, gender],
-    queryFn: () => tournamentApi.getScorers(tid, gender),
+    queryKey: ["scorers", tid],
+    queryFn: () => tournamentApi.getScorers(tid),
     enabled: Boolean(tid),
     refetchInterval: 10000,
   });
@@ -475,7 +475,7 @@ export function Results() {
     mutationFn: ({ matchId, payload }: { matchId: string; payload: ResultDraft }) => matchApi.setResult(matchId, payload),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["schedule", tid] });
-      await queryClient.invalidateQueries({ queryKey: ["standings", tid, gender] });
+      await queryClient.invalidateQueries({ queryKey: ["standings", tid, activeGender] });
     },
   });
 
@@ -502,28 +502,24 @@ export function Results() {
     return standingsBlocks.find((b) => b.group === groupTab)?.standings || [];
   }, [groupTab, standingsBlocks]);
 
-  // All gender-filtered matches
-  const allGenderMatches = useMemo(() => {
-    const all = (scheduleQuery.data || []) as Match[];
-    return all.filter((m) => (m.gender || "").toUpperCase() === gender);
-  }, [gender, scheduleQuery.data]);
+  const allMatches = useMemo(() => (scheduleQuery.data || []) as Match[], [scheduleQuery.data]);
 
   // Team options derived from matches
   const teamOptions = useMemo(() => {
     const map = new Map<string, string>();
-    for (const m of allGenderMatches) {
+    for (const m of allMatches) {
       if (m.team_home_id) map.set(m.team_home_id, m.team_home);
       if (m.team_away_id) map.set(m.team_away_id, m.team_away);
     }
     return [...map.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name, "it"));
-  }, [allGenderMatches]);
+  }, [allMatches]);
 
   // Day options derived from matches
   const dayOptions = useMemo(() => {
     const days = new Set<string>();
-    for (const m of allGenderMatches) { if (m.slot?.day_label) days.add(m.slot.day_label); }
+    for (const m of allMatches) { if (m.slot?.day_label) days.add(m.slot.day_label); }
     return [...days].sort((a, b) => a.localeCompare(b, "it"));
-  }, [allGenderMatches]);
+  }, [allMatches]);
 
   useEffect(() => {
     if (!selectedTeamId && teamOptions.length > 0) setSelectedTeamId(teamOptions[0].id);
@@ -537,14 +533,14 @@ export function Results() {
 
   const matches = useMemo(() => {
     if (viewTab === "team") {
-      return allGenderMatches.filter((m) => m.team_home_id === selectedTeamId || m.team_away_id === selectedTeamId);
+      return allMatches.filter((m) => m.team_home_id === selectedTeamId || m.team_away_id === selectedTeamId);
     }
     if (viewTab === "day") {
-      return allGenderMatches.filter((m) => m.slot?.day_label === selectedDay);
+      return allMatches.filter((m) => m.slot?.day_label === selectedDay);
     }
-    if (!groupTab || groupTab === "wildcard") return allGenderMatches;
-    return allGenderMatches.filter((m) => m.group_name === groupTab);
-  }, [viewTab, groupTab, selectedTeamId, selectedDay, allGenderMatches]);
+    if (!groupTab || groupTab === "wildcard") return allMatches;
+    return allMatches.filter((m) => m.group_name === groupTab);
+  }, [viewTab, groupTab, selectedTeamId, selectedDay, allMatches]);
 
   useEffect(() => {
     setResultDrafts((curr) => {
@@ -560,12 +556,41 @@ export function Results() {
     });
   }, [matches]);
 
+  const autosaveTimersRef = useRef<Record<string, number>>({});
+  const autosaveSnapshotsRef = useRef<Record<string, string>>({});
+  const queueAutosave = useCallback((matchId: string, payload: ResultDraft) => {
+    const prevTimer = autosaveTimersRef.current[matchId];
+    if (prevTimer) window.clearTimeout(prevTimer);
+
+    autosaveTimersRef.current[matchId] = window.setTimeout(() => {
+      const serialized = JSON.stringify(payload);
+      if (autosaveSnapshotsRef.current[matchId] === serialized) return;
+      autosaveSnapshotsRef.current[matchId] = serialized;
+      void matchApi.setResult(matchId, payload).then(() => {
+        void queryClient.invalidateQueries({ queryKey: ["schedule", tid] });
+        void queryClient.invalidateQueries({ queryKey: ["standings", tid, activeGender] });
+      }).catch(() => undefined);
+    }, 800);
+  }, [queryClient, tid, activeGender]);
+
+  useEffect(() => {
+    return () => {
+      for (const timerId of Object.values(autosaveTimersRef.current)) window.clearTimeout(timerId);
+    };
+  }, []);
+
   const updateDraft = (matchId: string, key: keyof ResultDraft, value: number) => {
-    setResultDrafts((curr) => ({ ...curr, [matchId]: { ...(curr[matchId] || EMPTY_RESULT), [key]: value } }));
+    const currentDraft = resultDraftsRef.current[matchId] || EMPTY_RESULT;
+    const nextDraft = { ...currentDraft, [key]: value };
+    setResultDrafts((curr) => ({ ...curr, [matchId]: nextDraft }));
+    queueAutosave(matchId, nextDraft);
   };
 
   const resetFouls = (matchId: string) => {
-    setResultDrafts((curr) => ({ ...curr, [matchId]: { ...(curr[matchId] || EMPTY_RESULT), yellow_home: 0, yellow_away: 0 } }));
+    const currentDraft = resultDraftsRef.current[matchId] || EMPTY_RESULT;
+    const nextDraft = { ...currentDraft, yellow_home: 0, yellow_away: 0 };
+    setResultDrafts((curr) => ({ ...curr, [matchId]: nextDraft }));
+    queueAutosave(matchId, nextDraft);
   };
 
   const saveResult = async (matchId: string) => {
@@ -588,9 +613,9 @@ export function Results() {
     setResultDrafts((prev) => ({ ...prev, [matchId]: updated }));
     void matchApi.setResult(matchId, updated).then(() => {
       void queryClient.invalidateQueries({ queryKey: ["schedule", tid] });
-      void queryClient.invalidateQueries({ queryKey: ["standings", tid, gender] });
+      void queryClient.invalidateQueries({ queryKey: ["standings", tid, activeGender] });
     });
-  }, [tid, gender, queryClient]);
+  }, [tid, activeGender, queryClient]);
 
   const handleGoalDeleted = useCallback((matchId: string, homeId: string, goal: MatchGoal) => {
     const current = resultDraftsRef.current[matchId] || EMPTY_RESULT;
@@ -603,19 +628,12 @@ export function Results() {
     setResultDrafts((prev) => ({ ...prev, [matchId]: updated }));
     void matchApi.setResult(matchId, updated).then(() => {
       void queryClient.invalidateQueries({ queryKey: ["schedule", tid] });
-      void queryClient.invalidateQueries({ queryKey: ["standings", tid, gender] });
+      void queryClient.invalidateQueries({ queryKey: ["standings", tid, activeGender] });
     });
-  }, [tid, gender, queryClient]);
+  }, [tid, activeGender, queryClient]);
 
   const scorers = (scorersQuery.data || []) as Scorer[];
   const maxPoints = selectedStandings.reduce((max, row) => Math.max(max, row.points), 1);
-
-  const genderActiveStyle = (g: "M" | "F") =>
-    gender === g
-      ? g === "M"
-        ? { background: "rgba(59,130,246,0.15)", color: "#60a5fa", border: "1px solid rgba(59,130,246,0.35)" }
-        : { background: "rgba(236,72,153,0.15)", color: "#f472b6", border: "1px solid rgba(236,72,153,0.35)" }
-      : { background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.4)", border: "1px solid rgba(255,255,255,0.08)" };
 
   const viewTabStyle = (tab: "group" | "team" | "day") =>
     viewTab === tab
@@ -651,14 +669,13 @@ export function Results() {
           </select>
         </div>
 
-        <div className="flex gap-2">
-          {(["M", "F"] as const).map((g) => (
-            <button key={g} type="button" onClick={() => setGender(g)}
-              className="px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200"
-              style={genderActiveStyle(g)}>
-              {g === "M" ? "Maschile" : "Femminile"}
-            </button>
-          ))}
+        <div className="px-3 py-2 rounded-xl text-sm font-semibold"
+          style={{
+            background: activeGender === "M" ? "rgba(59,130,246,0.15)" : "rgba(236,72,153,0.15)",
+            color: activeGender === "M" ? "#60a5fa" : "#f472b6",
+            border: activeGender === "M" ? "1px solid rgba(59,130,246,0.35)" : "1px solid rgba(236,72,153,0.35)",
+          }}>
+          {activeGender === "M" ? "Maschile" : "Femminile"}
         </div>
 
         {/* Group tabs for standings navigation */}
